@@ -15,4 +15,6 @@ public interface BookService {
     BookResponse publishBook(Long id);
     BookResponse unpublishBook(Long id);
     BookResponse uploadPartnerContent(BookRequest bookRequest, MultipartFile file, String uploaderEmail);
+    BookResponse uploadZipBundle(MultipartFile zipFile, String uploaderEmail);
+    String getPresignedAccessUrl(Long bookId);
 }

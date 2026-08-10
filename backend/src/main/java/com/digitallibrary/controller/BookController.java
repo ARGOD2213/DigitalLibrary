@@ -47,6 +47,13 @@ public class BookController {
         return ResponseEntity.ok(ApiResponse.success("Book loaded successfully", bookService.getBookById(id)));
     }
 
+    @GetMapping("/{id}/access-url")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<String>> getPresignedAccessUrl(@PathVariable Long id) {
+        String accessUrl = bookService.getPresignedAccessUrl(id);
+        return ResponseEntity.ok(ApiResponse.success("Pre-signed URL generated successfully", accessUrl));
+    }
+
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<PageResponse<BookResponse>>> searchBooks(
             @RequestParam(required = false) String keyword,
@@ -95,5 +102,15 @@ public class BookController {
         BookResponse savedBook = bookService.uploadPartnerContent(bookRequest, file, principal.getName());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Content uploaded successfully", savedBook));
+    }
+
+    @PostMapping(value = "/upload/zip", consumes = "multipart/form-data")
+    @PreAuthorize("hasAnyRole('ADMIN', 'VENDOR')")
+    public ResponseEntity<ApiResponse<BookResponse>> uploadZipBundle(
+            @RequestPart("file") MultipartFile zipFile,
+            Principal principal) {
+        BookResponse savedBook = bookService.uploadZipBundle(zipFile, principal.getName());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("ZIP bundle uploaded and processed successfully", savedBook));
     }
 }

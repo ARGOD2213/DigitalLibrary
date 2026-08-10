@@ -3,12 +3,15 @@ package com.digitallibrary.service.impl;
 import com.digitallibrary.dto.BookRequest;
 import com.digitallibrary.dto.BookResponse;
 import com.digitallibrary.dto.PageResponse;
+import com.digitallibrary.dto.ZipContents;
 import com.digitallibrary.entity.Book;
 import com.digitallibrary.exception.DuplicateResourceException;
 import com.digitallibrary.exception.ResourceNotFoundException;
 import com.digitallibrary.repository.AppUserRepository;
 import com.digitallibrary.repository.BookRepository;
+import com.digitallibrary.service.AwsS3Service;
 import com.digitallibrary.service.BookService;
+import com.digitallibrary.service.ZipProcessingService;
 import com.digitallibrary.storage.FileStorageService;
 import com.digitallibrary.storage.StoredFile;
 import org.slf4j.Logger;
@@ -17,12 +20,13 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Service
 public class BookServiceImpl implements BookService {
@@ -32,12 +36,19 @@ public class BookServiceImpl implements BookService {
     private final BookRepository bookRepository;
     private final AppUserRepository appUserRepository;
     private final FileStorageService fileStorageService;
+    private final ZipProcessingService zipProcessingService;
+    private final AwsS3Service awsS3Service;
 
-    public BookServiceImpl(BookRepository bookRepository, AppUserRepository appUserRepository,
-                           FileStorageService fileStorageService) {
+    public BookServiceImpl(BookRepository bookRepository,
+                           AppUserRepository appUserRepository,
+                           FileStorageService fileStorageService,
+                           ZipProcessingService zipProcessingService,
+                           AwsS3Service awsS3Service) {
         this.bookRepository = bookRepository;
         this.appUserRepository = appUserRepository;
         this.fileStorageService = fileStorageService;
+        this.zipProcessingService = zipProcessingService;
+        this.awsS3Service = awsS3Service;
     }
 
     @Override
@@ -96,7 +107,6 @@ public class BookServiceImpl implements BookService {
     @Transactional
     public void deleteBook(Long id) {
         Book book = findBookOrThrow(id);
-        // Soft delete
         book.setDeletedAt(LocalDateTime.now());
         book.setPublished(false);
         book.setStatus("DELETED");
@@ -137,6 +147,57 @@ public class BookServiceImpl implements BookService {
         book.setFileUrl(storedFile.getFileUrl());
         book.setUploadedByUserId(uploaderId);
         return BookResponse.fromEntity(bookRepository.save(book));
+    }
+
+    @Override
+    @Transactional
+    public BookResponse uploadZipBundle(MultipartFile zipFile, String uploaderEmail) {
+        ZipContents zipContents = zipProcessingService.processZipFile(zipFile);
+        Long uploaderId = appUserRepository.findByEmail(uploaderEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Uploader account not found"))
+                .getId();
+
+        Map<String, Object> meta = zipContents.getMetadata();
+
+        String title = meta.containsKey("title") ? meta.get("title").toString() :
+                zipFile.getOriginalFilename().replace(".zip", "");
+        String author = meta.containsKey("author") ? meta.get("author").toString() : "Unknown Author";
+        String category = meta.containsKey("category") ? meta.get("category").toString() : "General";
+        String isbn = meta.containsKey("isbn") ? meta.get("isbn").toString() : null;
+        String description = meta.containsKey("description") ? meta.get("description").toString() : "Uploaded via ZIP bundle";
+
+        if (isbn != null) {
+            checkDuplicateIsbn(isbn, null);
+        }
+
+        Book book = new Book(title, author, category, isbn, 100);
+        book.setDescription(description);
+        book.setFileName(zipContents.getBookFileKey());
+        book.setFileUrl(zipContents.getBookFileUrl());
+        book.setCoverImageUrl(zipContents.getCoverFileUrl());
+        book.setUploadedByUserId(uploaderId);
+        book.setPublished(true);
+        book.setStatus("PUBLISHED");
+
+        if (meta.containsKey("price")) {
+            try {
+                book.setPrice(new BigDecimal(meta.get("price").toString()));
+            } catch (Exception ignored) {}
+        }
+
+        Book savedBook = bookRepository.save(book);
+        log.info("Successfully created book id={} from ZIP bundle upload", savedBook.getId());
+        return BookResponse.fromEntity(savedBook);
+    }
+
+    @Override
+    public String getPresignedAccessUrl(Long bookId) {
+        Book book = findBookOrThrow(bookId);
+        String fileKey = book.getFileName();
+        if (fileKey == null || fileKey.isBlank()) {
+            throw new ResourceNotFoundException("Book has no attached digital file key");
+        }
+        return awsS3Service.generatePresignedUrl(fileKey, 2880); // 48-hour pre-signed URL
     }
 
     private Book findBookOrThrow(Long id) {
