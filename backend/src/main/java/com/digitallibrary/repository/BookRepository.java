@@ -54,4 +54,9 @@ public interface BookRepository extends JpaRepository<Book, Long> {
     Optional<Book> findByIsbn(String isbn);
 
     boolean existsByIsbn(String isbn);
+
+    // Recommendations: books in a given category ordered by average rating
+    @Query("SELECT b FROM Book b WHERE b.deletedAt IS NULL AND b.published = true AND LOWER(b.categoryName) = LOWER(:category) ORDER BY b.averageRating DESC NULLS LAST")
+    Page<Book> findRecommendedByCategory(@Param("category") String category, Pageable pageable);
 }
+
