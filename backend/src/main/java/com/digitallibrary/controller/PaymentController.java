@@ -1,5 +1,6 @@
 package com.digitallibrary.controller;
 
+import com.digitallibrary.audit.Audited;
 import com.digitallibrary.dto.ApiResponse;
 import com.digitallibrary.dto.CheckoutRequest;
 import com.digitallibrary.dto.PageResponse;
@@ -25,6 +26,7 @@ public class PaymentController {
 
     @PostMapping("/checkout")
     @PreAuthorize("isAuthenticated()")
+    @Audited(action = "PAYMENT_CHECKOUT", entity = "Payment")
     public ResponseEntity<ApiResponse<PaymentResponse>> checkout(
             @Valid @RequestBody CheckoutRequest request,
             Principal principal) {

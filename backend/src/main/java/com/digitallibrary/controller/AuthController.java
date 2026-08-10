@@ -1,5 +1,6 @@
 package com.digitallibrary.controller;
 
+import com.digitallibrary.audit.Audited;
 import com.digitallibrary.dto.*;
 import com.digitallibrary.entity.AppUser;
 import com.digitallibrary.entity.RefreshToken;
@@ -37,6 +38,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
+    @Audited(action = "USER_LOGIN", entity = "User")
     public ApiResponse<AuthResponse> login(@Valid @RequestBody LoginRequest loginRequest) {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword())

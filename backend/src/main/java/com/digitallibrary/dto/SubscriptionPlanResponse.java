@@ -1,10 +1,11 @@
 package com.digitallibrary.dto;
 
 import com.digitallibrary.entity.SubscriptionPlan;
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-public class SubscriptionPlanResponse {
+public class SubscriptionPlanResponse implements Serializable {
     private Long id;
     private String name;
     private String planType;

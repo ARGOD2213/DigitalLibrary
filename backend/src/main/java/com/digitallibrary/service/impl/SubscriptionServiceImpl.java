@@ -12,6 +12,8 @@ import com.digitallibrary.repository.SubscriptionPlanRepository;
 import com.digitallibrary.repository.UserSubscriptionRepository;
 import com.digitallibrary.service.AwsNotificationService;
 import com.digitallibrary.service.SubscriptionService;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +41,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     }
 
     @Override
+    @Cacheable(value = "subscriptionPlans")
     public List<SubscriptionPlanResponse> getActivePlans() {
         return planRepository.findByActiveTrue().stream()
                 .map(SubscriptionPlanResponse::fromEntity)
@@ -47,6 +50,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "subscriptionPlans", allEntries = true)
     public SubscriptionPlanResponse createPlan(CreateSubscriptionPlanRequest request) {
         SubscriptionPlan plan = new SubscriptionPlan(
                 request.getName(),
