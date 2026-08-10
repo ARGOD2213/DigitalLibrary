@@ -1,12 +1,14 @@
 services:
 
+  # ─── PostgreSQL Database ──────────────────────────────────────────────────
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     container_name: digital-library-db
+    restart: unless-stopped
 
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB:-digital_library}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
     ports:
@@ -15,30 +17,78 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-digital_library}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+
+  # ─── Redis Cache ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: digital-library-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+    ports:
+      - "6379:6379"
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+
+  # ─── Spring Boot Backend ──────────────────────────────────────────────────
   backend:
-    image: digital-library-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: digital-library-backend
+    restart: unless-stopped
 
     ports:
       - "8000:8000"
 
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      # Database
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-digital_library}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      # JWT
       APP_JWT_SECRET: ${APP_JWT_SECRET}
-      APP_JWT_EXPIRATION_MS: ${APP_JWT_EXPIRATION_MS}
-      APP_STORAGE_LOCAL_FOLDER: ${APP_STORAGE_LOCAL_FOLDER}
+      APP_JWT_EXPIRATION_MS: ${APP_JWT_EXPIRATION_MS:-86400000}
+      APP_JWT_REFRESH_EXPIRATION_DAYS: ${APP_JWT_REFRESH_EXPIRATION_DAYS:-7}
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SPRING_CACHE_TYPE: redis
+      # AWS
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-digital-library-storage}
+      AWS_SES_FROM_EMAIL: ${AWS_SES_FROM_EMAIL:-noreply@digitallibrary.com}
+      AWS_MOCK_ENABLED: ${AWS_MOCK_ENABLED:-true}
+      # Misc
       JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Kolkata"
 
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 
+  # ─── React Frontend (Nginx) ───────────────────────────────────────────────
   frontend:
-    image: digital-library-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: digital-library-frontend
+    restart: unless-stopped
 
     ports:
       - "3000:80"
@@ -49,3 +99,4 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
