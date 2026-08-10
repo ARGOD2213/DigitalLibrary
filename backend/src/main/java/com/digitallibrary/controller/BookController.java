@@ -24,50 +24,45 @@ public class BookController {
         this.bookService = bookService;
     }
 
-    // POST is used when the client asks the server to create a new resource.
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'PARTNER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'VENDOR')")
     public ResponseEntity<ApiResponse<BookResponse>> addBook(@Valid @RequestBody BookRequest bookRequest) {
         BookResponse savedBook = bookService.addBook(bookRequest);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Book added successfully", savedBook));
     }
 
-    // Pagination keeps large tables fast later when the project grows.
     @GetMapping
     public ResponseEntity<ApiResponse<PageResponse<BookResponse>>> getAllBooks(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "6") int size,
+            @RequestParam(defaultValue = "12") int size,
             @RequestParam(defaultValue = "title") String sortBy,
             @RequestParam(defaultValue = "asc") String sortDirection) {
-        PageResponse<BookResponse> books = bookService.getAllBooks(page, size, sortBy, sortDirection);
-        return ResponseEntity.ok(ApiResponse.success("Books loaded successfully", books));
+        return ResponseEntity.ok(ApiResponse.success("Books loaded successfully",
+                bookService.getAllBooks(page, size, sortBy, sortDirection)));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<BookResponse>> getBookById(@PathVariable Long id) {
-        BookResponse book = bookService.getBookById(id);
-        return ResponseEntity.ok(ApiResponse.success("Book loaded successfully", book));
+        return ResponseEntity.ok(ApiResponse.success("Book loaded successfully", bookService.getBookById(id)));
     }
 
-    // Search books by title or author using the keyword query parameter.
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<PageResponse<BookResponse>>> searchBooks(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "6") int size) {
-        PageResponse<BookResponse> books = bookService.searchBooks(keyword, page, size);
-        return ResponseEntity.ok(ApiResponse.success("Search completed successfully", books));
+            @RequestParam(defaultValue = "12") int size) {
+        return ResponseEntity.ok(ApiResponse.success("Search completed successfully",
+                bookService.searchBooks(keyword, page, size)));
     }
 
-    // PUT replaces the editable fields of an existing book.
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PARTNER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'VENDOR')")
     public ResponseEntity<ApiResponse<BookResponse>> updateBook(
             @PathVariable Long id,
             @Valid @RequestBody BookRequest bookRequest) {
-        BookResponse updatedBook = bookService.updateBook(id, bookRequest);
-        return ResponseEntity.ok(ApiResponse.success("Book updated successfully", updatedBook));
+        return ResponseEntity.ok(ApiResponse.success("Book updated successfully",
+                bookService.updateBook(id, bookRequest)));
     }
 
     @DeleteMapping("/{id}")
@@ -77,8 +72,22 @@ public class BookController {
         return ResponseEntity.ok(ApiResponse.success("Book deleted successfully", null));
     }
 
+    @PatchMapping("/{id}/publish")
+    @PreAuthorize("hasAnyRole('ADMIN', 'VENDOR')")
+    public ResponseEntity<ApiResponse<BookResponse>> publishBook(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Book published successfully",
+                bookService.publishBook(id)));
+    }
+
+    @PatchMapping("/{id}/unpublish")
+    @PreAuthorize("hasAnyRole('ADMIN', 'VENDOR')")
+    public ResponseEntity<ApiResponse<BookResponse>> unpublishBook(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Book unpublished / moved to draft",
+                bookService.unpublishBook(id)));
+    }
+
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PARTNER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'VENDOR')")
     public ResponseEntity<ApiResponse<BookResponse>> uploadContent(
             @RequestPart("metadata") @Valid BookRequest bookRequest,
             @RequestPart("file") MultipartFile file,

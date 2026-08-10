@@ -11,15 +11,23 @@ import com.digitallibrary.repository.BookRepository;
 import com.digitallibrary.service.BookService;
 import com.digitallibrary.storage.FileStorageService;
 import com.digitallibrary.storage.StoredFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.time.LocalDateTime;
 
 @Service
 public class BookServiceImpl implements BookService {
+
+    private static final Logger log = LoggerFactory.getLogger(BookServiceImpl.class);
 
     private final BookRepository bookRepository;
     private final AppUserRepository appUserRepository;
@@ -33,11 +41,9 @@ public class BookServiceImpl implements BookService {
     }
 
     @Override
+    @Transactional
     public BookResponse addBook(BookRequest bookRequest) {
-        if (bookRepository.existsByIsbn(bookRequest.getIsbn())) {
-            throw new DuplicateResourceException("A book with this ISBN already exists");
-        }
-
+        checkDuplicateIsbn(bookRequest.getIsbn(), null);
         Book book = new Book(
                 bookRequest.getTitle(),
                 bookRequest.getAuthor(),
@@ -51,55 +57,75 @@ public class BookServiceImpl implements BookService {
 
     @Override
     public PageResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDirection) {
-        Sort.Direction direction = sortDirection.equalsIgnoreCase("desc") ? Sort.Direction.DESC : Sort.Direction.ASC;
-        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortBy));
-        Page<BookResponse> books = bookRepository.findAll(pageable).map(BookResponse::fromEntity);
-        return PageResponse.fromPage(books);
-    }
-
-    @Override
-    public PageResponse<BookResponse> searchBooks(String keyword, int page, int size) {
-        if (keyword == null || keyword.isBlank()) {
-            return getAllBooks(page, size, "title", "asc");
-        }
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "title"));
+        Sort.Direction direction = "desc".equalsIgnoreCase(sortDirection) ? Sort.Direction.DESC : Sort.Direction.ASC;
+        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, resolveSortField(sortBy)));
         Page<BookResponse> books = bookRepository
-                .findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(keyword, keyword, pageable)
+                .findByDeletedAtIsNullAndPublishedTrue(pageable)
                 .map(BookResponse::fromEntity);
         return PageResponse.fromPage(books);
     }
 
     @Override
-    public BookResponse getBookById(Long id) {
-        return BookResponse.fromEntity(findBookOrThrow(id));
+    public PageResponse<BookResponse> searchBooks(String keyword, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "title"));
+        if (keyword == null || keyword.isBlank()) {
+            return getAllBooks(page, size, "title", "asc");
+        }
+        Page<BookResponse> books = bookRepository.searchBooks(keyword, pageable).map(BookResponse::fromEntity);
+        return PageResponse.fromPage(books);
     }
 
     @Override
+    public BookResponse getBookById(Long id) {
+        Book book = findBookOrThrow(id);
+        book.setViewCount(book.getViewCount() + 1);
+        bookRepository.save(book);
+        return BookResponse.fromEntity(book);
+    }
+
+    @Override
+    @Transactional
     public BookResponse updateBook(Long id, BookRequest bookRequest) {
         Book existingBook = findBookOrThrow(id);
-        bookRepository.findByIsbn(bookRequest.getIsbn())
-                .filter(book -> !book.getId().equals(id))
-                .ifPresent(book -> {
-                    throw new DuplicateResourceException("A different book already uses this ISBN");
-                });
-
+        checkDuplicateIsbn(bookRequest.getIsbn(), id);
         applyEditableFields(existingBook, bookRequest);
-
         return BookResponse.fromEntity(bookRepository.save(existingBook));
     }
 
     @Override
+    @Transactional
     public void deleteBook(Long id) {
         Book book = findBookOrThrow(id);
-        bookRepository.delete(book);
+        // Soft delete
+        book.setDeletedAt(LocalDateTime.now());
+        book.setPublished(false);
+        book.setStatus("DELETED");
+        bookRepository.save(book);
+        log.info("Book soft-deleted: id={} title={}", id, book.getTitle());
     }
 
     @Override
-    public BookResponse uploadPartnerContent(BookRequest bookRequest, MultipartFile file, String uploaderEmail) {
-        if (bookRepository.existsByIsbn(bookRequest.getIsbn())) {
-            throw new DuplicateResourceException("A content item with this ISBN/reference already exists");
-        }
+    @Transactional
+    public BookResponse publishBook(Long id) {
+        Book book = findBookOrThrow(id);
+        book.setPublished(true);
+        book.setStatus("PUBLISHED");
+        return BookResponse.fromEntity(bookRepository.save(book));
+    }
 
+    @Override
+    @Transactional
+    public BookResponse unpublishBook(Long id) {
+        Book book = findBookOrThrow(id);
+        book.setPublished(false);
+        book.setStatus("DRAFT");
+        return BookResponse.fromEntity(bookRepository.save(book));
+    }
+
+    @Override
+    @Transactional
+    public BookResponse uploadPartnerContent(BookRequest bookRequest, MultipartFile file, String uploaderEmail) {
+        checkDuplicateIsbn(bookRequest.getIsbn(), null);
         StoredFile storedFile = fileStorageService.store(file);
         Long uploaderId = appUserRepository.findByEmail(uploaderEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("Uploader account not found"))
@@ -110,25 +136,53 @@ public class BookServiceImpl implements BookService {
         book.setFileName(storedFile.getFileName());
         book.setFileUrl(storedFile.getFileUrl());
         book.setUploadedByUserId(uploaderId);
-
         return BookResponse.fromEntity(bookRepository.save(book));
     }
 
     private Book findBookOrThrow(Long id) {
-        return bookRepository.findById(id)
+        return bookRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Book not found with id: " + id));
     }
 
-    private void applyEditableFields(Book book, BookRequest bookRequest) {
-        book.setTitle(bookRequest.getTitle());
-        book.setAuthor(bookRequest.getAuthor());
-        book.setCategory(bookRequest.getCategory());
-        book.setIsbn(bookRequest.getIsbn());
-        book.setAvailableCopies(bookRequest.getAvailableCopies());
-        book.setContentType(bookRequest.getContentType());
-        book.setAccessType(bookRequest.getAccessType());
-        book.setDescription(bookRequest.getDescription());
-        book.setPreviewText(bookRequest.getPreviewText());
-        book.setPublisher(bookRequest.getPublisher());
+    private void checkDuplicateIsbn(String isbn, Long excludeId) {
+        if (isbn == null || isbn.isBlank()) return;
+        bookRepository.findByIsbn(isbn)
+                .filter(book -> excludeId == null || !book.getId().equals(excludeId))
+                .ifPresent(book -> {
+                    throw new DuplicateResourceException("A book with ISBN '" + isbn + "' already exists");
+                });
+    }
+
+    private void applyEditableFields(Book book, BookRequest req) {
+        book.setTitle(req.getTitle());
+        book.setSubtitle(req.getSubtitle());
+        book.setAuthor(req.getAuthor());
+        book.setCategory(req.getCategory());
+        book.setIsbn(req.getIsbn());
+        book.setAvailableCopies(req.getAvailableCopies());
+        if (req.getPrice() != null) book.setPrice(req.getPrice());
+        book.setFree(req.isFree());
+        book.setPublished(req.isPublished());
+        book.setStatus(req.getStatus() != null ? req.getStatus() : "PUBLISHED");
+        book.setContentType(req.getContentType());
+        book.setAccessType(req.getAccessType());
+        book.setDescription(req.getDescription());
+        book.setPreviewText(req.getPreviewText());
+        book.setPublisher(req.getPublisher());
+        book.setTags(req.getTags());
+        if (req.getCoverImageUrl() != null) book.setCoverImageUrl(req.getCoverImageUrl());
+    }
+
+    private String resolveSortField(String sortBy) {
+        return switch (sortBy != null ? sortBy.toLowerCase() : "title") {
+            case "author" -> "authorName";
+            case "category" -> "categoryName";
+            case "price" -> "price";
+            case "rating" -> "averageRating";
+            case "sales" -> "totalSales";
+            case "views" -> "viewCount";
+            case "createdat", "created" -> "createdAt";
+            default -> "title";
+        };
     }
 }
