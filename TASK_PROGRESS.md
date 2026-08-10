@@ -1,11 +1,11 @@
 # Task Progress & Session Handoff Log
 
 ## Status Overview
-* **Current Phase**: Phase 4 - Vendor Portal & Marketplace Features
-* **Active Task (NEXT TO IMPLEMENT)**: Task 4.2 - Vendor Catalog & Commission Calculation Service
+* **Current Phase**: Phase 5 - Subscriptions & Payments
+* **Active Task (NEXT TO IMPLEMENT)**: Task 5.1 - Tiered Subscription Engine & Expiry Processing
 * **Last Updated**: 2026-08-11
 * **Git Repository**: `https://github.com/ARGOD2213/DigitalLibrary.git`
-* **Last Commit**: `884e11c` — Task 4.1 completed
+* **Last Commit**: `c30198a` — Task 4.2 completed
 
 ---
 
@@ -20,8 +20,8 @@
 | 3 | Task 3.1 | Advanced Book CRUD & Soft Delete System | ✅ COMPLETED | `92c48c9` | Soft delete, publish/unpublish endpoints, PATCH /api/books/{id}/publish\|unpublish, viewCount, tags, price, status |
 | 3 | Task 3.2 | AWS S3 File Storage & ZIP Processing Engine | ✅ COMPLETED | `6e58e61` | S3FileStorageService (@Primary), ZipProcessingServiceImpl (unzip, metadata.json, cover/doc S3 upload), pre-signed URL endpoint `/api/books/{id}/access-url` |
 | 4 | Task 4.1 | Vendor Application & Admin Approval Flow | ✅ COMPLETED | `884e11c` | Vendor onboarding, application submission, admin review & approval/rejection |
-| 4 | Task 4.2 | Vendor Catalog & Commission Calculation Service | ⏳ NEXT | - | Platform vs vendor earnings calculation (90/10) |
-| 5 | Task 5.1 | Tiered Subscription Engine & Expiry Processing | 🔲 PENDING | - | Free/Monthly/Yearly plans & scheduled background runner |
+| 4 | Task 4.2 | Vendor Catalog & Commission Calculation Service | ✅ COMPLETED | `c30198a` | Platform vs vendor earnings calculation, CommissionService, Vendor GET books/commissions endpoints |
+| 5 | Task 5.1 | Tiered Subscription Engine & Expiry Processing | ⏳ NEXT | - | Free/Monthly/Yearly plans & scheduled background runner |
 | 5 | Task 5.2 | Payment Gateway Integration & Webhook Handler | 🔲 PENDING | - | Checkout, webhook signature verification, PDF invoices |
 | 6 | Task 6.1 | Reviews, Favorites, Reading History & Recommendations | 🔲 PENDING | - | Verified user reviews, reading progress, recommendations |
 | 6 | Task 6.2 | Redis Caching, Audit Logging & Rate Limiting | 🔲 PENDING | - | Caching popular books/plans, Bucket4j rate limits |
@@ -35,42 +35,51 @@
 
 ---
 
-## 🔴 NEXT AI MODEL — START HERE: Task 4.2 (Vendor Catalog & Commission Calculation Service)
+## 🔴 NEXT AI MODEL — START HERE: Task 5.1 (Tiered Subscription Engine & Expiry Processing)
 
 ### What was completed so far:
-- **Task 1.1**: Database migration setup & 17 JPA entities mapped (`VendorProfile`, `AppUser`, `Book`, `Commission`, `Order`, `OrderItem` etc.).
-- **Task 1.2**: AWS SDK v2 integration (S3, SNS, SES) abstractions.
+- **Task 1.1**: Database migration setup & 17 JPA entities mapped (`SubscriptionPlan`, `UserSubscription`, `AppUser`, etc.).
+- **Task 1.2**: AWS SDK v2 integration (S3, SNS, SES).
 - **Task 2.1**: JWT Access & Refresh Token Rotation.
-- **Task 2.2**: Multi-Channel OTP Service (SES/SNS) with rate limiting.
-- **Task 3.1**: Book CRUD, soft delete, draft/published status, search.
-- **Task 3.2**: S3 File Storage (`S3FileStorageService`), ZIP Processing Engine (`ZipProcessingServiceImpl`), pre-signed URLs (`GET /api/books/{id}/access-url`), and ZIP bundle upload (`POST /api/books/upload/zip`).
-- **Task 4.1**: Vendor application flow, profile creation, and Admin approval/rejection endpoints (`POST /api/vendors/apply`, `PUT /api/vendors/{id}/approve`, etc.).
+- **Task 2.2**: Multi-Channel OTP Service (SES/SNS).
+- **Task 3.1**: Book CRUD.
+- **Task 3.2**: S3 File Storage.
+- **Task 4.1**: Vendor application flow, profile creation, and Admin approval.
+- **Task 4.2**: Vendor Catalog & Commission Calculation Service (CommissionService, Commission entity updates, VendorController endpoints).
 
-### Task 4.2 Implementation Guide (Vendor Catalog & Commission Calculation Service):
-**Goal**: Implement the core logic for calculating earnings based on book sales. Platform takes a commission (e.g., 10%) and Vendor takes the rest (e.g., 90%).
+### Task 5.1 Implementation Guide (Tiered Subscription Engine & Expiry Processing):
+**Goal**: Build the core subscription management for users. Manage subscription plans (Free/Monthly/Yearly) and a background job to handle subscription expiries.
 
 1. **Entities & Repositories**:
-   - Check `Commission` entity (`backend/src/main/java/com/digitallibrary/entity/Commission.java`)
-   - Check `Order` and `OrderItem` entities.
-   - Check if you need a `CommissionRepository` in `com.digitallibrary.repository`
+   - Check `SubscriptionPlan` entity (`com.digitallibrary.entity.SubscriptionPlan`) and `UserSubscription` entity (`com.digitallibrary.entity.UserSubscription`).
+   - Create `SubscriptionPlanRepository` and `UserSubscriptionRepository`.
 
-2. **Commission Calculation Service**:
-   - Create a service `CommissionService` and its implementation `CommissionServiceImpl`.
-   - Method `calculateAndRecordCommission(OrderItem orderItem)`:
-     - Get the Book from `OrderItem`.
-     - Check if Book belongs to a Vendor (`vendorProfile_id`).
-     - If it does, fetch the vendor's `commissionRate` (this is the platform's cut, e.g., 10%).
-     - Calculate Platform Earnings = `orderItem.getPrice() * (commissionRate / 100)`.
-     - Calculate Vendor Earnings = `orderItem.getPrice() - Platform Earnings`.
-     - Update `OrderItem` with these values (`vendorEarning`, `platformCommission`).
-     - Create a `Commission` record (VendorProfile, OrderItem, GrossAmount, PlatformCommission, VendorEarning, Status='PENDING' or 'CLEARED').
+2. **DTOs**:
+   - Create `SubscriptionPlanResponse` and `UserSubscriptionResponse`.
+   - Optionally `CreateSubscriptionPlanRequest` for admins.
 
-3. **Vendor Catalog Endpoints**:
-   - Maybe an endpoint for vendors to see their own catalog (books they uploaded). Check if `BookController` can handle it, or add `GET /api/vendors/me/books` to `VendorController`.
-   - Add endpoint `GET /api/vendors/me/commissions` to see their earnings.
+3. **Subscription Service**:
+   - Create `SubscriptionService` and `SubscriptionServiceImpl`.
+   - Methods to get active plans (`getActivePlans()`).
+   - Admin methods to create/update plans (`createPlan()`).
+   - Method for user to subscribe (or simulate subscribing for now, before payment gateway in 5.2): `subscribeUser(Long userId, Long planId)`. It should create `UserSubscription` with `ACTIVE` status, and set `startDate` and `endDate` based on plan duration.
 
-4. **Execution Rules**:
+4. **Background Expiry Processing (Scheduled Task)**:
+   - Create a class `SubscriptionExpiryScheduler` with `@Scheduled(cron = "0 0 0 * * ?")` (runs daily at midnight).
+   - Method `processExpiredSubscriptions()`:
+     - Find all `UserSubscription` where `endDate` < now and `status` = 'ACTIVE'.
+     - Set status to 'EXPIRED' or 'CANCELLED'.
+     - Send notification email using `AwsNotificationService` to the user informing them their subscription has expired.
+   - *Note*: Ensure `@EnableScheduling` is added to a configuration class or main application class.
+
+5. **Subscription Controller**:
+   - `GET /api/subscriptions/plans` (Public/User) - list available plans.
+   - `POST /api/subscriptions/plans` (Admin) - create plan.
+   - `POST /api/subscriptions/subscribe/{planId}` (User) - subscribe to a plan.
+   - `GET /api/subscriptions/me` (User) - get current subscription status.
+
+6. **Execution Rules**:
    - Run `mvn test-compile` in `backend/` to verify build success before committing.
-   - Commit atomically using: `git add .` then `git commit -m "feat: complete Task 4.2 - Vendor Catalog & Commission Calculation Service"`.
+   - Commit atomically using: `git add .` then `git commit -m "feat: complete Task 5.1 - Tiered Subscription Engine & Expiry Processing"`.
    - Push to main: `git push origin main`.
-   - Update `TASK_PROGRESS.md` with completed status, commit hash, and set active task to **Task 5.1**.
+   - Update `TASK_PROGRESS.md` with completed status, commit hash, and set active task to **Task 5.2**.
