@@ -1,11 +1,11 @@
 # Task Progress & Session Handoff Log
 
 ## Status Overview
-* **Current Phase**: Phase 5 - Subscriptions & Payments
-* **Active Task (NEXT TO IMPLEMENT)**: Task 5.1 - Tiered Subscription Engine & Expiry Processing
+* **Current Phase**: Phase 7 - Frontend Application Development
+* **Active Task (NEXT TO IMPLEMENT)**: Task 7.1 - Frontend Design System & JWT Refresh Interceptor
 * **Last Updated**: 2026-08-11
 * **Git Repository**: `https://github.com/ARGOD2213/DigitalLibrary.git`
-* **Last Commit**: `c30198a` — Task 4.2 completed
+* **Last Commit**: `acf046e` — Task 6.2 completed
 
 ---
 
@@ -21,11 +21,11 @@
 | 3 | Task 3.2 | AWS S3 File Storage & ZIP Processing Engine | ✅ COMPLETED | `6e58e61` | S3FileStorageService (@Primary), ZipProcessingServiceImpl (unzip, metadata.json, cover/doc S3 upload), pre-signed URL endpoint `/api/books/{id}/access-url` |
 | 4 | Task 4.1 | Vendor Application & Admin Approval Flow | ✅ COMPLETED | `884e11c` | Vendor onboarding, application submission, admin review & approval/rejection |
 | 4 | Task 4.2 | Vendor Catalog & Commission Calculation Service | ✅ COMPLETED | `c30198a` | Platform vs vendor earnings calculation, CommissionService, Vendor GET books/commissions endpoints |
-| 5 | Task 5.1 | Tiered Subscription Engine & Expiry Processing | ⏳ NEXT | - | Free/Monthly/Yearly plans & scheduled background runner |
-| 5 | Task 5.2 | Payment Gateway Integration & Webhook Handler | 🔲 PENDING | - | Checkout, webhook signature verification, PDF invoices |
-| 6 | Task 6.1 | Reviews, Favorites, Reading History & Recommendations | 🔲 PENDING | - | Verified user reviews, reading progress, recommendations |
-| 6 | Task 6.2 | Redis Caching, Audit Logging & Rate Limiting | 🔲 PENDING | - | Caching popular books/plans, Bucket4j rate limits |
-| 7 | Task 7.1 | Frontend Design System & JWT Refresh Interceptor | 🔲 PENDING | - | MUI v5 setup, custom theme, Axios interceptor |
+| 5 | Task 5.1 | Tiered Subscription Engine & Expiry Processing | ✅ COMPLETED | `6846e6e` | Free/Monthly/Yearly plans, SubscriptionService, @Scheduled daily expiry runner |
+| 5 | Task 5.2 | Payment Gateway Integration & Webhook Handler | ✅ COMPLETED | `a90ee2d` | Checkout flow, PaymentService, mock gateway, webhook signature verification, order/commission sync |
+| 6 | Task 6.1 | Reviews, Favorites, Reading History & Recommendations | ✅ COMPLETED | `98665cc` | Verified user reviews, rating aggregations, favorites management, reading history tracking, category-based recommendations |
+| 6 | Task 6.2 | Redis Caching, Audit Logging & Rate Limiting | ✅ COMPLETED | `acf046e` | @EnableCaching, Redis config, AOP @Audited aspect with AuditLog entity/repo, Bucket4j RateLimitFilter (60 req/min/IP), Admin AuditLogController |
+| 7 | Task 7.1 | Frontend Design System & JWT Refresh Interceptor | ⏳ NEXT | - | React, Material UI v5, custom dark theme, Axios interceptor for JWT rotation |
 | 7 | Task 7.2 | User Dashboard & Online Book Reader UI | 🔲 PENDING | - | User dashboard, reading progress, file downloads |
 | 7 | Task 7.3 | Vendor Dashboard & Analytics UI | 🔲 PENDING | - | Sales charts, revenue breakdown, catalog management |
 | 7 | Task 7.4 | Admin Dashboard & Moderation UI | 🔲 PENDING | - | Platform revenue, vendor approvals, audit logs |
@@ -35,51 +35,33 @@
 
 ---
 
-## 🔴 NEXT AI MODEL — START HERE: Task 5.1 (Tiered Subscription Engine & Expiry Processing)
+## 🔴 NEXT AI MODEL — START HERE: Task 7.1 (Frontend Design System & JWT Refresh Interceptor)
 
 ### What was completed so far:
-- **Task 1.1**: Database migration setup & 17 JPA entities mapped (`SubscriptionPlan`, `UserSubscription`, `AppUser`, etc.).
-- **Task 1.2**: AWS SDK v2 integration (S3, SNS, SES).
-- **Task 2.1**: JWT Access & Refresh Token Rotation.
-- **Task 2.2**: Multi-Channel OTP Service (SES/SNS).
-- **Task 3.1**: Book CRUD.
-- **Task 3.2**: S3 File Storage.
-- **Task 4.1**: Vendor application flow, profile creation, and Admin approval.
-- **Task 4.2**: Vendor Catalog & Commission Calculation Service (CommissionService, Commission entity updates, VendorController endpoints).
+- **Phases 1-6 Fully Completed** (All backend features, security, AWS integration, books, vendors, subscriptions, payments, engagement, caching, rate-limiting, and audit logging).
 
-### Task 5.1 Implementation Guide (Tiered Subscription Engine & Expiry Processing):
-**Goal**: Build the core subscription management for users. Manage subscription plans (Free/Monthly/Yearly) and a background job to handle subscription expiries.
+### Task 7.1 Implementation Guide (Frontend Design System & JWT Refresh Interceptor):
+**Goal**: Set up React frontend design system with Material UI v5, dynamic dark/light theme, routing, and an Axios instance with JWT request/refresh interceptors.
 
-1. **Entities & Repositories**:
-   - Check `SubscriptionPlan` entity (`com.digitallibrary.entity.SubscriptionPlan`) and `UserSubscription` entity (`com.digitallibrary.entity.UserSubscription`).
-   - Create `SubscriptionPlanRepository` and `UserSubscriptionRepository`.
+1. **Frontend Setup**:
+   - Check existing `frontend/` directory or initialize React project if needed.
+   - Install `@mui/material`, `@emotion/react`, `@emotion/styled`, `@mui/icons-material`, `axios`, `react-router-dom`.
 
-2. **DTOs**:
-   - Create `SubscriptionPlanResponse` and `UserSubscriptionResponse`.
-   - Optionally `CreateSubscriptionPlanRequest` for admins.
+2. **Design System & Theme**:
+   - Create a rich, modern theme with glassmorphism touches, dark mode support, custom typography, and curated color palettes.
+   - Set up `ThemeContext` or `ThemeProvider`.
 
-3. **Subscription Service**:
-   - Create `SubscriptionService` and `SubscriptionServiceImpl`.
-   - Methods to get active plans (`getActivePlans()`).
-   - Admin methods to create/update plans (`createPlan()`).
-   - Method for user to subscribe (or simulate subscribing for now, before payment gateway in 5.2): `subscribeUser(Long userId, Long planId)`. It should create `UserSubscription` with `ACTIVE` status, and set `startDate` and `endDate` based on plan duration.
+3. **Axios & Auth Interceptor**:
+   - Create `api/axios.js` with base URL `/api`.
+   - Request interceptor: Attach JWT `Authorization: Bearer <token>` from local storage / auth state.
+   - Response interceptor: On `401 Unauthorized`, attempt refresh via `POST /api/auth/refresh` with stored refresh token. On success, retry original request; on failure, clear tokens & redirect to `/login`.
 
-4. **Background Expiry Processing (Scheduled Task)**:
-   - Create a class `SubscriptionExpiryScheduler` with `@Scheduled(cron = "0 0 0 * * ?")` (runs daily at midnight).
-   - Method `processExpiredSubscriptions()`:
-     - Find all `UserSubscription` where `endDate` < now and `status` = 'ACTIVE'.
-     - Set status to 'EXPIRED' or 'CANCELLED'.
-     - Send notification email using `AwsNotificationService` to the user informing them their subscription has expired.
-   - *Note*: Ensure `@EnableScheduling` is added to a configuration class or main application class.
+4. **Routing & Auth Context**:
+   - Set up `AuthContext` to manage current user state, login/logout, and role checks (`ROLE_ADMIN`, `ROLE_VENDOR`, `ROLE_USER`).
+   - Create layout wrappers (e.g. `MainLayout`, `Header`, `Sidebar`, `Footer`).
 
-5. **Subscription Controller**:
-   - `GET /api/subscriptions/plans` (Public/User) - list available plans.
-   - `POST /api/subscriptions/plans` (Admin) - create plan.
-   - `POST /api/subscriptions/subscribe/{planId}` (User) - subscribe to a plan.
-   - `GET /api/subscriptions/me` (User) - get current subscription status.
-
-6. **Execution Rules**:
-   - Run `mvn test-compile` in `backend/` to verify build success before committing.
-   - Commit atomically using: `git add .` then `git commit -m "feat: complete Task 5.1 - Tiered Subscription Engine & Expiry Processing"`.
+5. **Execution Rules**:
+   - Run build/typecheck validation (`npm run build` or `npm run lint` if available).
+   - Commit atomically: `git add .` then `git commit -m "feat: complete Task 7.1 - Frontend Design System & JWT Refresh Interceptor"`.
    - Push to main: `git push origin main`.
-   - Update `TASK_PROGRESS.md` with completed status, commit hash, and set active task to **Task 5.2**.
+   - Update `TASK_PROGRESS.md` with completed status, commit hash, and set active task to **Task 7.2**.
