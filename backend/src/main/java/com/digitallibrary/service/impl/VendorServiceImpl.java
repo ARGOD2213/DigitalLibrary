@@ -20,19 +20,31 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+import com.digitallibrary.dto.BookResponse;
+import com.digitallibrary.dto.CommissionResponse;
+import com.digitallibrary.repository.BookRepository;
+import com.digitallibrary.repository.CommissionRepository;
+import org.springframework.data.domain.Pageable;
+
 @Service
 public class VendorServiceImpl implements VendorService {
 
     private final VendorProfileRepository vendorProfileRepository;
     private final AppUserRepository appUserRepository;
     private final AwsNotificationService awsNotificationService;
+    private final BookRepository bookRepository;
+    private final CommissionRepository commissionRepository;
 
     public VendorServiceImpl(VendorProfileRepository vendorProfileRepository,
                              AppUserRepository appUserRepository,
-                             AwsNotificationService awsNotificationService) {
+                             AwsNotificationService awsNotificationService,
+                             BookRepository bookRepository,
+                             CommissionRepository commissionRepository) {
         this.vendorProfileRepository = vendorProfileRepository;
         this.appUserRepository = appUserRepository;
         this.awsNotificationService = awsNotificationService;
+        this.bookRepository = bookRepository;
+        this.commissionRepository = commissionRepository;
     }
 
     @Override
@@ -109,5 +121,19 @@ public class VendorServiceImpl implements VendorService {
         awsNotificationService.sendEmail(user.getEmail(), subject, body);
 
         return VendorResponse.fromEntity(savedProfile);
+    }
+
+    @Override
+    public PageResponse<BookResponse> getVendorBooks(String userEmail, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<com.digitallibrary.entity.Book> books = bookRepository.findByVendorProfileUserEmailAndDeletedAtIsNull(userEmail, pageable);
+        return PageResponse.fromPage(books.map(BookResponse::fromEntity));
+    }
+
+    @Override
+    public PageResponse<CommissionResponse> getVendorCommissions(String userEmail, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<com.digitallibrary.entity.Commission> commissions = commissionRepository.findByVendorProfileUserEmail(userEmail, pageable);
+        return PageResponse.fromPage(commissions.map(CommissionResponse::fromEntity));
     }
 }

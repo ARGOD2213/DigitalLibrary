@@ -69,4 +69,24 @@ public class VendorController {
         VendorResponse response = vendorService.rejectVendor(id, request != null ? request.getRejectionReason() : null);
         return ResponseEntity.ok(ApiResponse.success("Vendor application rejected", response));
     }
+
+    @GetMapping("/me/books")
+    @PreAuthorize("hasRole('VENDOR')")
+    public ResponseEntity<ApiResponse<PageResponse<com.digitallibrary.dto.BookResponse>>> getMyBooks(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            Principal principal) {
+        PageResponse<com.digitallibrary.dto.BookResponse> books = vendorService.getVendorBooks(principal.getName(), page, size);
+        return ResponseEntity.ok(ApiResponse.success("Vendor books retrieved", books));
+    }
+
+    @GetMapping("/me/commissions")
+    @PreAuthorize("hasRole('VENDOR')")
+    public ResponseEntity<ApiResponse<PageResponse<com.digitallibrary.dto.CommissionResponse>>> getMyCommissions(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            Principal principal) {
+        PageResponse<com.digitallibrary.dto.CommissionResponse> commissions = vendorService.getVendorCommissions(principal.getName(), page, size);
+        return ResponseEntity.ok(ApiResponse.success("Vendor commissions retrieved", commissions));
+    }
 }
