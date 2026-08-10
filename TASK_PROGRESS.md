@@ -1,8 +1,8 @@
 # Task Progress & Session Handoff Log
 
 ## Status Overview
-* **Current Phase**: Phase 1 - Foundations & Schema
-* **Active Task**: Task 1.2 - AWS SDK Integration (S3, SNS, SES) & Cloud Config
+* **Current Phase**: Phase 2 - Security, Authentication & Notifications
+* **Active Task**: Task 2.1 - JWT Access & Refresh Token Rotation
 * **Last Updated**: 2026-08-11
 * **Git Repository**: `https://github.com/ARGOD2213/DigitalLibrary.git`
 
@@ -13,7 +13,7 @@
 | Phase | Task ID | Task Description | Status | Git Commit Hash | Notes / Handoff |
 |---|---|---|---|---|---|
 | 1 | Task 1.1 | Database Migration System (Flyway) & Core Entities | COMPLETED | `7220030` | Flyway V1__init_schema.sql created, 17 JPA entities mapped & compiled |
-| 1 | Task 1.2 | AWS SDK Integration (S3, SNS, SES) & Cloud Config | PENDING | - | Configure AWS SDK v2 beans & CloudWatch appender |
+| 1 | Task 1.2 | AWS SDK Integration (S3, SNS, SES) & Cloud Config | COMPLETED | `c1db4f0` | AWS SDK v2 (S3, SNS, SES) beans & service implementations configured |
 | 2 | Task 2.1 | JWT Access & Refresh Token Rotation | PENDING | - | Implement token revocation & rotation tables |
 | 2 | Task 2.2 | AWS Notification (SES/SNS) & Multi-Channel OTP | PENDING | - | OTP generation, rate limiting, verification |
 | 3 | Task 3.1 | Advanced Book CRUD & Soft Delete System | PENDING | - | Search, filter, pagination, draft/published |
