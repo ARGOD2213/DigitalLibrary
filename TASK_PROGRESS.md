@@ -2,10 +2,10 @@
 
 ## Status Overview
 * **Current Phase**: Phase 7 - Frontend Application Development
-* **Active Task (NEXT TO IMPLEMENT)**: Task 7.1 - Frontend Design System & JWT Refresh Interceptor
+* **Active Task (NEXT TO IMPLEMENT)**: Task 7.2 - User Dashboard & Online Book Reader UI
 * **Last Updated**: 2026-08-11
 * **Git Repository**: `https://github.com/ARGOD2213/DigitalLibrary.git`
-* **Last Commit**: `acf046e` — Task 6.2 completed
+* **Last Commit**: `07f3fa7` — Task 7.1 completed
 
 ---
 
@@ -25,8 +25,8 @@
 | 5 | Task 5.2 | Payment Gateway Integration & Webhook Handler | ✅ COMPLETED | `a90ee2d` | Checkout flow, PaymentService, mock gateway, webhook signature verification, order/commission sync |
 | 6 | Task 6.1 | Reviews, Favorites, Reading History & Recommendations | ✅ COMPLETED | `98665cc` | Verified user reviews, rating aggregations, favorites management, reading history tracking, category-based recommendations |
 | 6 | Task 6.2 | Redis Caching, Audit Logging & Rate Limiting | ✅ COMPLETED | `acf046e` | @EnableCaching, Redis config, AOP @Audited aspect with AuditLog entity/repo, Bucket4j RateLimitFilter (60 req/min/IP), Admin AuditLogController |
-| 7 | Task 7.1 | Frontend Design System & JWT Refresh Interceptor | ⏳ NEXT | - | React, Material UI v5, custom dark theme, Axios interceptor for JWT rotation |
-| 7 | Task 7.2 | User Dashboard & Online Book Reader UI | 🔲 PENDING | - | User dashboard, reading progress, file downloads |
+| 7 | Task 7.1 | Frontend Design System & JWT Refresh Interceptor | ✅ COMPLETED | `07f3fa7` | Material UI v5 glassmorphic theme, Axios instance with automatic 401 refresh interceptor, AuthContext, ThemeContext, Navbar, Footer, ProtectedRoute |
+| 7 | Task 7.2 | User Dashboard & Online Book Reader UI | ⏳ NEXT | - | User dashboard, reading progress, file downloads, book catalog search & reader |
 | 7 | Task 7.3 | Vendor Dashboard & Analytics UI | 🔲 PENDING | - | Sales charts, revenue breakdown, catalog management |
 | 7 | Task 7.4 | Admin Dashboard & Moderation UI | 🔲 PENDING | - | Platform revenue, vendor approvals, audit logs |
 | 8 | Task 8.1 | Dockerization & Multi-Container Stack | 🔲 PENDING | - | Dockerfiles for Backend & Frontend, docker-compose |
@@ -35,33 +35,25 @@
 
 ---
 
-## 🔴 NEXT AI MODEL — START HERE: Task 7.1 (Frontend Design System & JWT Refresh Interceptor)
+## 🔴 NEXT AI MODEL — START HERE: Task 7.2 (User Dashboard & Online Book Reader UI)
 
 ### What was completed so far:
-- **Phases 1-6 Fully Completed** (All backend features, security, AWS integration, books, vendors, subscriptions, payments, engagement, caching, rate-limiting, and audit logging).
+- **Task 7.1**: Design system configured with MUI v5, dark/light theme, Axios interceptor with token rotation, AuthContext, ThemeContext, Navbar, Footer, and ProtectedRoute.
 
-### Task 7.1 Implementation Guide (Frontend Design System & JWT Refresh Interceptor):
-**Goal**: Set up React frontend design system with Material UI v5, dynamic dark/light theme, routing, and an Axios instance with JWT request/refresh interceptors.
+### Task 7.2 Implementation Guide (User Dashboard & Online Book Reader UI):
+**Goal**: Implement comprehensive User Dashboard, Catalog View, Book Detail View, Favorites, Reading Progress tracking, and Online Book Reader UI.
 
-1. **Frontend Setup**:
-   - Check existing `frontend/` directory or initialize React project if needed.
-   - Install `@mui/material`, `@emotion/react`, `@emotion/styled`, `@mui/icons-material`, `axios`, `react-router-dom`.
+1. **Pages & Components**:
+   - `src/pages/CatalogPage.jsx`: Full catalog view with category filters, search, sorting, and pagination.
+   - `src/pages/BookDetailPage.jsx`: Book details, cover image, rating, reviews section (add review, view reviews), favorite toggle, purchase / subscribe button, and "Read Online" / "Download" buttons.
+   - `src/pages/UserDashboardPage.jsx`: User dashboard displaying active subscription details, reading history progress bars, saved favorites, and payment history.
+   - `src/pages/BookReaderPage.jsx`: In-browser book reader using pre-signed S3 access URLs (`GET /api/books/{id}/access-url`), page navigation, and automatic reading progress tracking via `POST /api/books/{id}/progress`.
+   - `src/pages/SubscriptionsPage.jsx`: Interactive subscription plan grid with "Subscribe Now" checkout trigger.
 
-2. **Design System & Theme**:
-   - Create a rich, modern theme with glassmorphism touches, dark mode support, custom typography, and curated color palettes.
-   - Set up `ThemeContext` or `ThemeProvider`.
+2. **API Integrations**:
+   - Integrate endpoints from `LibraryEngagementController`, `SubscriptionController`, and `PaymentController`.
 
-3. **Axios & Auth Interceptor**:
-   - Create `api/axios.js` with base URL `/api`.
-   - Request interceptor: Attach JWT `Authorization: Bearer <token>` from local storage / auth state.
-   - Response interceptor: On `401 Unauthorized`, attempt refresh via `POST /api/auth/refresh` with stored refresh token. On success, retry original request; on failure, clear tokens & redirect to `/login`.
-
-4. **Routing & Auth Context**:
-   - Set up `AuthContext` to manage current user state, login/logout, and role checks (`ROLE_ADMIN`, `ROLE_VENDOR`, `ROLE_USER`).
-   - Create layout wrappers (e.g. `MainLayout`, `Header`, `Sidebar`, `Footer`).
-
-5. **Execution Rules**:
-   - Run build/typecheck validation (`npm run build` or `npm run lint` if available).
-   - Commit atomically: `git add .` then `git commit -m "feat: complete Task 7.1 - Frontend Design System & JWT Refresh Interceptor"`.
+3. **Execution Rules**:
+   - Commit atomically: `git add .` then `git commit -m "feat: complete Task 7.2 - User Dashboard & Online Book Reader UI"`.
    - Push to main: `git push origin main`.
-   - Update `TASK_PROGRESS.md` with completed status, commit hash, and set active task to **Task 7.2**.
+   - Update `TASK_PROGRESS.md` with completed status, commit hash, and set active task to **Task 7.3**.
