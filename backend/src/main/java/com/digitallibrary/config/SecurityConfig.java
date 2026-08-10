@@ -2,6 +2,7 @@ package com.digitallibrary.config;
 
 import com.digitallibrary.ratelimit.RateLimitFilter;
 import com.digitallibrary.security.JwtAuthenticationFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -16,6 +17,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
@@ -41,9 +43,18 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> {})
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(unauthorizedEntryPoint())
+                )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/health", "/api/files/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/books/**").permitAll()
+                        // Engagement endpoints — any authenticated user
+                        .requestMatchers(HttpMethod.POST, "/api/books/*/reviews").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/books/*/favorite").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/books/*/favorite").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/books/*/favorite/status").authenticated()
+                        // Vendor / Admin only
                         .requestMatchers("/api/vendor/**", "/api/partner/**").hasAnyRole("ADMIN", "VENDOR")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/books/**").hasAnyRole("ADMIN", "VENDOR")
@@ -55,6 +66,17 @@ public class SecurityConfig {
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
+    }
+
+    @Bean
+    public AuthenticationEntryPoint unauthorizedEntryPoint() {
+        return (request, response, authException) -> {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write(
+                "{\"success\":false,\"message\":\"Authentication required\",\"data\":null}"
+            );
+        };
     }
 
     @Bean
