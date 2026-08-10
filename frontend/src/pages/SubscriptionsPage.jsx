@@ -127,7 +127,7 @@ export const SubscriptionsPage = () => {
                       <ListItem disableGutters>
                         <ListItemIcon sx={{ minWidth: 32 }}>
                           <CheckIcon color="primary" />
-                        </ListItemText>
+                        </ListItemIcon>
                         <ListItemText primary="Reading progress synchronization" />
                       </ListItem>
                     </List>
