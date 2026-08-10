@@ -1,11 +1,11 @@
 # Task Progress & Session Handoff Log
 
 ## Status Overview
-* **Current Phase**: Phase 3 - Book Management & File Storage
-* **Active Task (NEXT TO IMPLEMENT)**: Task 3.2 - AWS S3 File Storage & ZIP Processing Engine
+* **Current Phase**: Phase 4 - Vendor Portal & Marketplace Features
+* **Active Task (NEXT TO IMPLEMENT)**: Task 4.1 - Vendor Application & Admin Approval Flow
 * **Last Updated**: 2026-08-11
 * **Git Repository**: `https://github.com/ARGOD2213/DigitalLibrary.git`
-* **Last Commit**: `92c48c9` — Task 3.1 completed
+* **Last Commit**: `6e58e61` — Task 3.2 completed
 
 ---
 
@@ -17,9 +17,9 @@
 | 1 | Task 1.2 | AWS SDK Integration (S3, SNS, SES) & Cloud Config | ✅ COMPLETED | `c1db4f0` | AWS SDK v2 (S3, SNS, SES) beans & service implementations configured |
 | 2 | Task 2.1 | JWT Access & Refresh Token Rotation | ✅ COMPLETED | `56b4f26` | RefreshToken entity, repository, service, rotation logic, /refresh, /logout endpoints |
 | 2 | Task 2.2 | AWS Notification (SES/SNS) & Multi-Channel OTP | ✅ COMPLETED | `b59452c` | OTP entity/repo/service/controller, rate limiting (5/hr), max 3 attempts, EMAIL+SMS dispatch |
-| 3 | Task 3.1 | Advanced Book CRUD & Soft Delete System | ✅ COMPLETED | `92c48c9` | Soft delete, publish/unpublish endpoints, PATCH /api/books/{id}/publish|unpublish, viewCount, tags, price, status |
-| 3 | Task 3.2 | AWS S3 File Storage & ZIP Processing Engine | ⏳ NEXT | - | Multipart upload to S3, ZIP extraction of bundled assets, pre-signed read URLs |
-| 4 | Task 4.1 | Vendor Application & Admin Approval Flow | 🔲 PENDING | - | Vendor onboarding & approval security |
+| 3 | Task 3.1 | Advanced Book CRUD & Soft Delete System | ✅ COMPLETED | `92c48c9` | Soft delete, publish/unpublish endpoints, PATCH /api/books/{id}/publish\|unpublish, viewCount, tags, price, status |
+| 3 | Task 3.2 | AWS S3 File Storage & ZIP Processing Engine | ✅ COMPLETED | `6e58e61` | S3FileStorageService (@Primary), ZipProcessingServiceImpl (unzip, metadata.json, cover/doc S3 upload), pre-signed URL endpoint `/api/books/{id}/access-url` |
+| 4 | Task 4.1 | Vendor Application & Admin Approval Flow | ⏳ NEXT | - | Vendor onboarding, application submission, admin review & approval/rejection |
 | 4 | Task 4.2 | Vendor Catalog & Commission Calculation Service | 🔲 PENDING | - | Platform vs vendor earnings calculation (90/10) |
 | 5 | Task 5.1 | Tiered Subscription Engine & Expiry Processing | 🔲 PENDING | - | Free/Monthly/Yearly plans & scheduled background runner |
 | 5 | Task 5.2 | Payment Gateway Integration & Webhook Handler | 🔲 PENDING | - | Checkout, webhook signature verification, PDF invoices |
@@ -35,53 +35,51 @@
 
 ---
 
-## 🔴 NEXT AI MODEL — START HERE: Task 3.2
+## 🔴 NEXT AI MODEL — START HERE: Task 4.1 (Vendor Application & Admin Approval Flow)
 
-### What was already implemented (do NOT redo):
-- **FileStorageService** interface + `LocalFileStorageService` impl already exist in `backend/src/main/java/com/digitallibrary/storage/`
-- **AwsS3Service** interface + impl already exist in `backend/src/main/java/com/digitallibrary/service/`
-- **AwsConfig** configures S3Client, SnsClient, SesClient beans
-- **Book entity** has `fileUrl`, `fileName`, `coverImageUrl` fields ready
-- **BookController** already has `POST /api/books/upload` (multipart) endpoint wired to `BookService.uploadPartnerContent()`
+### What was completed so far:
+- **Task 1.1**: Database migration setup & 17 JPA entities mapped (`Vendor`, `AppUser`, `Book`, etc.).
+- **Task 1.2**: AWS SDK v2 integration (S3, SNS, SES) abstractions.
+- **Task 2.1**: JWT Access & Refresh Token Rotation.
+- **Task 2.2**: Multi-Channel OTP Service (SES/SNS) with rate limiting.
+- **Task 3.1**: Book CRUD, soft delete, draft/published status, search.
+- **Task 3.2**: S3 File Storage (`S3FileStorageService`), ZIP Processing Engine (`ZipProcessingServiceImpl`), pre-signed URLs (`GET /api/books/{id}/access-url`), and ZIP bundle upload (`POST /api/books/upload/zip`).
 
-### Task 3.2 Implementation Guide:
-**Goal**: Replace `LocalFileStorageService` with a production-grade `S3FileStorageService` and add ZIP processing.
+### Task 4.1 Implementation Guide (Vendor Application & Admin Approval):
+**Goal**: Implement the onboarding lifecycle for Vendors/Partners applying to sell or publish books on the platform.
 
-1. **`S3FileStorageService`** (implements `FileStorageService`)
-   - Use `AwsS3Service` to upload to `${aws.s3.bucket}` under key `books/{uuid}/{filename}`
-   - Return pre-signed URL (48-hour expiry) as `fileUrl` in `StoredFile`
-   - Handle `MultipartFile` → `RequestBody.fromInputStream()`
+1. **Entities & Repositories**:
+   - Check `Vendor` entity in `backend/src/main/java/com/digitallibrary/entity/Vendor.java`
+   - Create/verify `VendorRepository` in `com.digitallibrary.repository`
+   - Key attributes on Vendor: `businessName`, `contactEmail`, `contactPhone`, `status` (`PENDING`, `APPROVED`, `REJECTED`), `taxId`, `commissionRate` (default 0.10 / 10%).
 
-2. **`ZipProcessingService`**  
-   - Accept a ZIP `MultipartFile`
-   - Extract entries: `cover.jpg/png`, `book.pdf/epub`, `metadata.json` (optional)
-   - Upload each extracted file individually to S3
-   - Return `ZipContents` record: `{ coverUrl, contentUrl, metadataMap }`
+2. **DTOs**:
+   - `VendorApplicationRequest`: `businessName`, `contactPhone`, `taxId`, `description`, `website`
+   - `VendorResponse`: ID, businessName, contactEmail, contactPhone, status, commissionRate, approvedAt, createdAt
+   - `VendorStatusUpdateRequest`: `status` (`APPROVED` / `REJECTED`), `rejectionReason`, `commissionRate`
 
-3. **`BookUploadController`** (or extend `BookController`)
-   - `POST /api/books/upload/zip` — accepts ZIP bundle, extracts & stores, creates Book record
+3. **VendorService & Implementation**:
+   - `applyForVendor(String userEmail, VendorApplicationRequest request)`:
+     - Check if user already has an active or pending vendor application
+     - Create Vendor record with status `PENDING`
+   - `getPendingApplications(Pageable pageable)`: (Admin only)
+   - `approveVendor(Long vendorId, BigDecimal commissionRate)`: (Admin only)
+     - Set status = `APPROVED`, update user role to `ROLE_VENDOR` (or add role)
+     - Send notification email/SMS via `AwsNotificationService`
+   - `rejectVendor(Long vendorId, String reason)`: (Admin only)
+     - Set status = `REJECTED`, record rejection reason
+     - Send rejection notification via `AwsNotificationService`
+   - `getVendorProfile(String userEmail)`: Get current user's vendor details
 
-4. **Pre-signed URL refresh endpoint**
-   - `GET /api/books/{id}/access-url` — regenerates a fresh pre-signed URL for authorized users
+4. **VendorController**:
+   - `POST /api/vendors/apply` — `@PreAuthorize("isAuthenticated()")`
+   - `GET /api/vendors/me` — `@PreAuthorize("hasRole('VENDOR') or isAuthenticated()")`
+   - `GET /api/vendors/pending` — `@PreAuthorize("hasRole('ADMIN')")`
+   - `PUT /api/vendors/{id}/approve` — `@PreAuthorize("hasRole('ADMIN')")`
+   - `PUT /api/vendors/{id}/reject` — `@PreAuthorize("hasRole('ADMIN')")`
 
-5. **Update `application.properties`** — ensure `aws.s3.bucket`, `aws.region`, `aws.mock-enabled` are documented placeholders
-
-### Architecture notes:
-- Workspace: `c:\Users\NAVEEN ROYAL\Digital Library\`
-- Backend: `backend/` subdirectory — run `mvn test-compile` to validate before committing
-- Git: push after every task with `git push origin main`
-- Build must pass before committing — no broken commits
-- `&&` does NOT work in this PowerShell environment — run git commands individually
-- **JPQL field names**: Use entity field names (e.g. `b.authorName`, `b.categoryName`), not column names
-
----
-
-## Instructions for AI Model Execution Sessions
-1. Read **TASK_PROGRESS.md** and identify the **Active Task** (marked ⏳ NEXT).
-2. Read the "NEXT AI MODEL — START HERE" section for detailed guidance.
-3. Complete all code changes for that specific task atomically.
-4. Validate with `mvn test-compile` from `backend/` — fix any errors before committing.
-5. Stage: `git add .` from repo root
-6. Commit: `git commit -m "feat: complete Task X.Y - <Description>"`
-7. Push: `git push origin main`
-8. Update this file — mark task as ✅ COMPLETED with commit hash, update Active Task to next.
+### Execution Rules:
+- Run `mvn test-compile` in `backend/` to verify build success before committing.
+- Commit atomically using: `git add .` then `git commit -m "feat: complete Task 4.1 - Vendor Application & Admin Approval Flow"`.
+- Push to main: `git push origin main`.
+- Update `TASK_PROGRESS.md` with completed status, commit hash, and set active task to **Task 4.2**.
