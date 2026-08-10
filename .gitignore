@@ -12,3 +12,25 @@
 /.idea
 *.iml
 .vscode
+
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Java / Maven
+backend/target/
+
+# Node / React
+frontend/node_modules/
+frontend/build/
+
+# Local application files
+local-storage/
+
+# Logs
+*.log
+
+# IDE
+.vscode/

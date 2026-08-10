@@ -57,11 +57,10 @@ backend/src/main/resources/application.properties
 Current local values:
 
 ```properties
-server.port=8000
 spring.datasource.url=jdbc:postgresql://localhost:5432/digital_library
 spring.datasource.username=postgres
-spring.datasource.password=postgres
-```
+spring.datasource.password=<your-local-password>
+
 
 ## Run Locally
 

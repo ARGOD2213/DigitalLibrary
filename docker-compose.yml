@@ -1,0 +1,51 @@
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: digital-library-db
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+
+  backend:
+    image: digital-library-backend:latest
+    container_name: digital-library-backend
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_JWT_SECRET: ${APP_JWT_SECRET}
+      APP_JWT_EXPIRATION_MS: ${APP_JWT_EXPIRATION_MS}
+      APP_STORAGE_LOCAL_FOLDER: ${APP_STORAGE_LOCAL_FOLDER}
+      JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Kolkata"
+
+    depends_on:
+      - postgres
+
+
+  frontend:
+    image: digital-library-frontend:latest
+    container_name: digital-library-frontend
+
+    ports:
+      - "3000:80"
+
+    depends_on:
+      - backend
+
+
+volumes:
+  postgres_data:
