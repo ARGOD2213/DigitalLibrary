@@ -1,0 +1,258 @@
+-- V1__init_schema.sql: Initial Database Schema Migration for Digital Library Platform
+
+-- 1. USERS
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    full_name VARCHAR(150),
+    phone_number VARCHAR(30),
+    role VARCHAR(50) NOT NULL DEFAULT 'ROLE_USER',
+    status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+    is_email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    is_phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. REFRESH TOKENS
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(512) UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    revoked BOOLEAN NOT NULL DEFAULT FALSE,
+    replaced_by_token VARCHAR(512),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. OTPS
+CREATE TABLE IF NOT EXISTS otps (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+    target VARCHAR(150) NOT NULL,
+    code VARCHAR(20) NOT NULL,
+    type VARCHAR(50) NOT NULL,
+    channel VARCHAR(20) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+    is_used BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 4. VENDOR PROFILES
+CREATE TABLE IF NOT EXISTS vendor_profiles (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    store_name VARCHAR(150) NOT NULL,
+    bio TEXT,
+    commission_rate NUMERIC(5, 2) NOT NULL DEFAULT 10.00,
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    approved_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 5. AUTHORS
+CREATE TABLE IF NOT EXISTS authors (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    bio TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 6. CATEGORIES
+CREATE TABLE IF NOT EXISTS categories (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. BOOKS
+CREATE TABLE IF NOT EXISTS books (
+    id BIGSERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    subtitle VARCHAR(255),
+    author_id BIGINT REFERENCES authors(id) ON DELETE SET NULL,
+    author_name VARCHAR(150),
+    category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL,
+    category_name VARCHAR(100),
+    vendor_profile_id BIGINT REFERENCES vendor_profiles(id) ON DELETE SET NULL,
+    isbn VARCHAR(50),
+    price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    available_copies INT NOT NULL DEFAULT 100,
+    is_free BOOLEAN NOT NULL DEFAULT FALSE,
+    is_published BOOLEAN NOT NULL DEFAULT TRUE,
+    status VARCHAR(50) NOT NULL DEFAULT 'PUBLISHED',
+    description TEXT,
+    tags VARCHAR(255),
+    cover_image_url VARCHAR(512),
+    sample_file_url VARCHAR(512),
+    full_file_url VARCHAR(512),
+    total_sales INT NOT NULL DEFAULT 0,
+    average_rating NUMERIC(3, 2) NOT NULL DEFAULT 0.00,
+    view_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP
+);
+
+-- 8. BOOK FILES
+CREATE TABLE IF NOT EXISTS book_files (
+    id BIGSERIAL PRIMARY KEY,
+    book_id BIGINT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    file_key VARCHAR(512) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_type VARCHAR(50) NOT NULL,
+    file_size BIGINT NOT NULL,
+    is_sample BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9. SUBSCRIPTION PLANS
+CREATE TABLE IF NOT EXISTS subscription_plans (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    plan_type VARCHAR(50) NOT NULL,
+    price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    duration_days INT NOT NULL DEFAULT 30,
+    max_downloads_per_month INT NOT NULL DEFAULT 10,
+    features_json TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 10. USER SUBSCRIPTIONS
+CREATE TABLE IF NOT EXISTS user_subscriptions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id BIGINT NOT NULL REFERENCES subscription_plans(id),
+    status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+    start_date TIMESTAMP NOT NULL,
+    end_date TIMESTAMP NOT NULL,
+    auto_renew BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 11. ORDERS
+CREATE TABLE IF NOT EXISTS orders (
+    id BIGSERIAL PRIMARY KEY,
+    order_number VARCHAR(100) UNIQUE NOT NULL,
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    total_amount NUMERIC(10, 2) NOT NULL,
+    platform_fee NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    status VARCHAR(50) NOT NULL DEFAULT 'CREATED',
+    invoice_url VARCHAR(512),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 12. ORDER ITEMS
+CREATE TABLE IF NOT EXISTS order_items (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    book_id BIGINT NOT NULL REFERENCES books(id),
+    vendor_profile_id BIGINT REFERENCES vendor_profiles(id),
+    price NUMERIC(10, 2) NOT NULL,
+    vendor_earning NUMERIC(10, 2) NOT NULL,
+    platform_commission NUMERIC(10, 2) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 13. PAYMENTS
+CREATE TABLE IF NOT EXISTS payments (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    order_id BIGINT REFERENCES orders(id) ON DELETE SET NULL,
+    subscription_id BIGINT REFERENCES user_subscriptions(id) ON DELETE SET NULL,
+    payment_gateway VARCHAR(50) NOT NULL,
+    transaction_id VARCHAR(150) UNIQUE,
+    payment_intent_id VARCHAR(150),
+    amount NUMERIC(10, 2) NOT NULL,
+    currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    raw_response TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 14. COMMISSIONS
+CREATE TABLE IF NOT EXISTS commissions (
+    id BIGSERIAL PRIMARY KEY,
+    vendor_profile_id BIGINT NOT NULL REFERENCES vendor_profiles(id),
+    order_item_id BIGINT NOT NULL REFERENCES order_items(id),
+    gross_amount NUMERIC(10, 2) NOT NULL,
+    platform_commission NUMERIC(10, 2) NOT NULL,
+    vendor_earning NUMERIC(10, 2) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 15. REVIEWS
+CREATE TABLE IF NOT EXISTS reviews (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id BIGINT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    comment TEXT,
+    is_moderated BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 16. FAVORITES
+CREATE TABLE IF NOT EXISTS favorites (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id BIGINT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_user_book_favorite UNIQUE (user_id, book_id)
+);
+
+-- 17. READING HISTORY
+CREATE TABLE IF NOT EXISTS reading_history (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id BIGINT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    last_page_read INT NOT NULL DEFAULT 1,
+    progress_percentage NUMERIC(5, 2) NOT NULL DEFAULT 0.00,
+    last_read_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_user_book_history UNIQUE (user_id, book_id)
+);
+
+-- 18. NOTIFICATIONS
+CREATE TABLE IF NOT EXISTS notifications (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(50) NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 19. AUDIT LOGS
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    username VARCHAR(100),
+    action VARCHAR(100) NOT NULL,
+    entity VARCHAR(100),
+    entity_id VARCHAR(100),
+    ip_address VARCHAR(50),
+    status VARCHAR(50) NOT NULL,
+    details TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- INDEXES FOR FAST QUERYING
+CREATE INDEX IF NOT EXISTS idx_books_author ON books(author_id);
+CREATE INDEX IF NOT EXISTS idx_books_category ON books(category_id);
+CREATE INDEX IF NOT EXISTS idx_books_vendor ON books(vendor_profile_id);
+CREATE INDEX IF NOT EXISTS idx_books_status ON books(status);
+CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_subscriptions_user ON user_subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);

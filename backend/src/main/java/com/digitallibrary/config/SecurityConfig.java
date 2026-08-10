@@ -39,10 +39,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/health", "/api/files/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/books/**").permitAll()
-                        .requestMatchers("/api/partner/**").hasAnyRole("ADMIN", "PARTNER")
+                        .requestMatchers("/api/vendor/**", "/api/partner/**").hasAnyRole("ADMIN", "VENDOR")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/books/**").hasAnyRole("ADMIN", "PARTNER")
-                        .requestMatchers(HttpMethod.PUT, "/api/books/**").hasAnyRole("ADMIN", "PARTNER")
+                        .requestMatchers(HttpMethod.POST, "/api/books/**").hasAnyRole("ADMIN", "VENDOR")
+                        .requestMatchers(HttpMethod.PUT, "/api/books/**").hasAnyRole("ADMIN", "VENDOR")
                         .requestMatchers(HttpMethod.DELETE, "/api/books/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
