@@ -28,6 +28,14 @@ public class AuthResponse {
         this.token = token;
     }
 
+    public String getAccessToken() {
+        return token;
+    }
+
+    public void setAccessToken(String accessToken) {
+        this.token = accessToken;
+    }
+
     public String getRefreshToken() {
         return refreshToken;
     }

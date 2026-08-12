@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
     status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
     is_email_verified BOOLEAN NOT NULL DEFAULT FALSE,
     is_phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    subscription_plan VARCHAR(50) NOT NULL DEFAULT 'FREE',
+    organization_name VARCHAR(255),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -87,6 +89,12 @@ CREATE TABLE IF NOT EXISTS books (
     is_published BOOLEAN NOT NULL DEFAULT TRUE,
     status VARCHAR(50) NOT NULL DEFAULT 'PUBLISHED',
     description TEXT,
+    preview_text TEXT,
+    publisher VARCHAR(255),
+    file_name VARCHAR(255),
+    uploaded_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    content_type VARCHAR(50) NOT NULL DEFAULT 'BOOK',
+    access_type VARCHAR(50) NOT NULL DEFAULT 'FREE',
     tags VARCHAR(255),
     cover_image_url VARCHAR(512),
     sample_file_url VARCHAR(512),

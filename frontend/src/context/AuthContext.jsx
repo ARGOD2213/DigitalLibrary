@@ -14,16 +14,29 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     try {
       const response = await api.post('/auth/login', { email, password });
-      const { accessToken, refreshToken, user: userData } = response.data.data;
+      const authData = response.data.data;
+      const accessToken = authData.token || authData.accessToken;
+      const refreshToken = authData.refreshToken;
+      const userData = authData.user;
 
-      localStorage.setItem('accessToken', accessToken);
-      localStorage.setItem('refreshToken', refreshToken);
-      localStorage.setItem('user', JSON.stringify(userData));
+      if (accessToken) {
+        localStorage.setItem('accessToken', accessToken);
+      }
+      if (refreshToken) {
+        localStorage.setItem('refreshToken', refreshToken);
+      }
+      if (userData) {
+        localStorage.setItem('user', JSON.stringify(userData));
+        setUser(userData);
+      }
 
-      setUser(userData);
       return { success: true, user: userData };
     } catch (error) {
-      const message = error.response?.data?.message || 'Login failed';
+      let message = error.response?.data?.message || 'Login failed';
+      if (error.response?.data?.data && typeof error.response.data.data === 'object') {
+        const details = Object.values(error.response.data.data).join(', ');
+        if (details) message = `${message}: ${details}`;
+      }
       return { success: false, message };
     } finally {
       setLoading(false);
@@ -50,7 +63,11 @@ export const AuthProvider = ({ children }) => {
       const response = await api.post('/auth/register', userData);
       return { success: true, data: response.data.data };
     } catch (error) {
-      const message = error.response?.data?.message || 'Registration failed';
+      let message = error.response?.data?.message || 'Registration failed';
+      if (error.response?.data?.data && typeof error.response.data.data === 'object') {
+        const details = Object.values(error.response.data.data).join(', ');
+        if (details) message = `${message}: ${details}`;
+      }
       return { success: false, message };
     } finally {
       setLoading(false);
