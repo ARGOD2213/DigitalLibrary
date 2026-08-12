@@ -4,7 +4,8 @@ WORKDIR /app
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-COPY target/*.jar app.jar
+ARG JAR_FILE=*app*.jar
+COPY ${JAR_FILE} app.jar
 
 RUN chown -R appuser:appgroup /app
 

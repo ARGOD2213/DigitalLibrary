@@ -128,6 +128,12 @@ jobs:
             type=sha,prefix=,suffix=,format=short
             type=raw,value=latest
 
+      - name: Download backend JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target
+
       - name: Build & push backend image
         uses: docker/build-push-action@v5
         with:

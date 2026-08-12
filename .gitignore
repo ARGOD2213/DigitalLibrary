@@ -34,6 +34,7 @@ local-storage/
 *.tar
 *.pem
 deployment-info.*
+NEW_LAPTOP_AI_BOOTSTRAP_PROMPT.md
 
 # IDE
 .vscode/

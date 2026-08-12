@@ -16,39 +16,42 @@ function Run($cmd) {
     }
 }
 
-Write-Host "`n=== Step 1: Build frontend Docker image (no cache) ===" -ForegroundColor Yellow
+Write-Host "`n=== Step 1: Build Java Backend JAR ===" -ForegroundColor Yellow
+Set-Location "$ROOT\backend"
+Run "mvn package -DskipTests -q"
 Set-Location $ROOT
-Run "docker build --no-cache -t digital-library-frontend:latest ./frontend"
 
-Write-Host "`n=== Step 2: Save both images to archive ===" -ForegroundColor Yellow
-$TAR = "$PSScriptRoot\images.tar"
-Run "docker save -o `"$TAR`" digital-library-frontend:latest digital-library-backend:latest"
+Write-Host "`n=== Step 2: Ensure remote /app/build directory on EC2 ===" -ForegroundColor Yellow
+Invoke-Expression "$SSH `"sudo mkdir -p /app/build && sudo chown -R ubuntu:ubuntu /app`""
 
-Write-Host "`n=== Step 3: Ensure /app dir on EC2 ===" -ForegroundColor Yellow
-Invoke-Expression "$SSH `"sudo mkdir -p /app && sudo chown ubuntu:ubuntu /app`""
-
-Write-Host "`n=== Step 4: Copy images to EC2 ===" -ForegroundColor Yellow
-Run "$SCP `"$TAR`" ubuntu@${IP}:/app/images.tar"
-Remove-Item $TAR -Force -ErrorAction SilentlyContinue
-
-Write-Host "`n=== Step 5: Load images on EC2 ===" -ForegroundColor Yellow
-Run "$SSH `"docker load -i /app/images.tar && rm -f /app/images.tar`""
-
-Write-Host "`n=== Step 6: Copy fresh compose file ===" -ForegroundColor Yellow
+Write-Host "`n=== Step 3: Copy JAR, Dockerfile, and Compose to EC2 ===" -ForegroundColor Yellow
+Run "$SCP `"$ROOT\backend\target\*.jar`" ubuntu@${IP}:/app/build/app.jar"
+Run "$SCP `"$ROOT\backend\Dockerfile`" ubuntu@${IP}:/app/build/Dockerfile"
 Run "$SCP `"$PSScriptRoot\docker-compose.prod.yml`" ubuntu@${IP}:/app/docker-compose.yml"
 
-Write-Host "`n=== Step 7: Restart containers on EC2 ===" -ForegroundColor Yellow
+Write-Host "`n=== Step 4: Build backend Docker image on EC2 ===" -ForegroundColor Yellow
+Run "$SSH `"cd /app/build && docker build --build-arg JAR_FILE=app.jar -t digital-library-backend:latest .`""
+
+Write-Host "`n=== Step 5: Restart containers on EC2 ===" -ForegroundColor Yellow
 Run "$SSH `"cd /app && docker compose down --remove-orphans && docker compose up -d`""
 
-Write-Host "`n=== Step 8: Wait 30s for Spring Boot to start ===" -ForegroundColor Yellow
+Write-Host "`n=== Step 6: Wait 30s for services to start ===" -ForegroundColor Yellow
 Start-Sleep 30
 
-Write-Host "`n=== Step 9: Smoke test backend /api/books ===" -ForegroundColor Yellow
+Write-Host "`n=== Step 7: Smoke test backend health & login ===" -ForegroundColor Yellow
 try {
-    $resp = Invoke-RestMethod "http://${IP}:3000/api/books" -TimeoutSec 15
-    Write-Host "Backend OK" -ForegroundColor Green
+    $resp = Invoke-RestMethod "http://${IP}:8000/api/health" -TimeoutSec 15
+    Write-Host ("Backend Health OK: " + ($resp | ConvertTo-Json -Depth 3)) -ForegroundColor Green
 } catch {
-    Write-Host "Backend may still be starting: $_" -ForegroundColor DarkYellow
+    Write-Host "Health check warning: $_" -ForegroundColor DarkYellow
+}
+
+try {
+    $body = '{"email":"admin@library.com","password":"admin123"}'
+    $login = Invoke-RestMethod -Method POST -Uri "http://${IP}:8000/api/auth/login" -Body $body -ContentType "application/json" -TimeoutSec 15
+    Write-Host ("Admin Login OK! Token: " + $login.data.token.Substring(0,25) + "...") -ForegroundColor Green
+} catch {
+    Write-Host "Login failed: $_" -ForegroundColor Red
 }
 
 Write-Host @"
@@ -57,7 +60,6 @@ Write-Host @"
   REDEPLOYMENT COMPLETE!
   Frontend : http://$IP:3000
   Login    : http://$IP:3000/login
-  Register : http://$IP:3000/register
-  Backend  : http://$IP:8000/api/books
+  Backend  : http://$IP:8000/api/health
 ==========================================
 "@ -ForegroundColor Green

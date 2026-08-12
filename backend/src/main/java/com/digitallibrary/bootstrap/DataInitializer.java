@@ -48,6 +48,8 @@ public class DataInitializer implements CommandLineRunner {
                 fullName,
                 role
         );
+        user.setEmailVerified(true);  // Required so the account is enabled for login
+        user.setStatus("ACTIVE");     // Ensure account is active
         appUserRepository.save(user);
     }
 
