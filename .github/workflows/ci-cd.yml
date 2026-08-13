@@ -170,6 +170,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ backend-ci, frontend-ci ]
     if: github.event_name == 'push'
+    env:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
     steps:
       - name: Checkout source
@@ -183,13 +185,21 @@ jobs:
           cache: maven
 
       - name: OWASP Dependency-Check (backend)
+        if: ${{ env.NVD_API_KEY != '' }}
         run: |
           mvn org.owasp:dependency-check-maven:check \
             -DfailBuildOnCVSS=9 \
             -DskipTests=true \
             -DassemblyAnalyzerEnabled=false \
+            -DnvdApiKey=${NVD_API_KEY} \
             --no-transfer-progress
         working-directory: backend
+
+      - name: OWASP Dependency-Check skipped (no NVD_API_KEY secret)
+        if: ${{ env.NVD_API_KEY == '' }}
+        run: |
+          echo "::warning::Skipping OWASP Dependency-Check — no NVD_API_KEY repo secret configured."
+          echo "::warning::Get a free key at https://nvd.nist.gov/developers/request-an-api-key and add it as a repo secret named NVD_API_KEY."
 
       - name: npm audit (frontend)
         run: npm audit --audit-level=critical
