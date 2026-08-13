@@ -3,6 +3,7 @@ package com.digitallibrary.config;
 import com.digitallibrary.ratelimit.RateLimitFilter;
 import com.digitallibrary.security.JwtAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -35,6 +36,9 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
     private final RateLimitFilter rateLimitFilter;
 
+    @Value("${app.cors.allowed-origins}")
+    private List<String> allowedOrigins;
+
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
                           UserDetailsService userDetailsService,
                           RateLimitFilter rateLimitFilter) {
@@ -54,6 +58,9 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/health", "/api/files/**").permitAll()
+                        // Payment gateway webhooks arrive unauthenticated (no user JWT) and are
+                        // instead trusted via HMAC signature verification in PaymentServiceImpl.
+                        .requestMatchers(HttpMethod.POST, "/api/payments/webhook/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/books/**").permitAll()
                         // Engagement endpoints — any authenticated user
                         .requestMatchers(HttpMethod.POST, "/api/books/*/reviews").authenticated()
@@ -77,14 +84,9 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Allow local development, EC2 production IP, and any IP-based origin
-        configuration.setAllowedOriginPatterns(List.of(
-            "http://localhost:*",
-            "http://127.0.0.1:*",
-            "http://*.*.*.*",       // any IPv4 — covers EC2 public IPs
-            "http://*.*.*.*:*",     // IPv4 with port
-            "https://*"             // any HTTPS domain (future)
-        ));
+        // Explicit allowlist only — required because allowCredentials(true) below makes a
+        // wildcard origin a CSRF/credential-leak vector. Configure via APP_CORS_ALLOWED_ORIGINS.
+        configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

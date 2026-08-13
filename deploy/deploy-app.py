@@ -23,6 +23,12 @@ RDS_DB = info["RDS_DB"]
 RDS_USER = info["RDS_USER"]
 RDS_PASS = info["RDS_PASS"]
 
+JWT_SECRET = os.environ.get("APP_JWT_SECRET", "")
+if not JWT_SECRET:
+    sys.exit("APP_JWT_SECRET env var is required — refusing to deploy with a hardcoded default.")
+
+CORS_ALLOWED_ORIGINS = os.environ.get("APP_CORS_ALLOWED_ORIGINS", f"http://{info['EC2_PUBLIC_IP']}:3000")
+
 SSH = f'ssh -i "{KEY}" -o StrictHostKeyChecking=no -o ConnectTimeout=30 ubuntu@{IP}'
 SCP = f'scp -i "{KEY}" -o StrictHostKeyChecking=no -r'
 
@@ -34,10 +40,12 @@ env_content = f"""POSTGRES_DB={RDS_DB}
 POSTGRES_USER={RDS_USER}
 POSTGRES_PASSWORD={RDS_PASS}
 
-APP_JWT_SECRET=prod-jwt-secret-digital-library-2026-super-secure-key-xyz
+APP_JWT_SECRET={JWT_SECRET}
 APP_JWT_EXPIRATION_MS=86400000
 APP_JWT_REFRESH_EXPIRATION_DAYS=7
 APP_STORAGE_LOCAL_FOLDER=local-storage
+
+APP_CORS_ALLOWED_ORIGINS={CORS_ALLOWED_ORIGINS}
 
 AWS_REGION=ap-south-1
 AWS_ACCESS_KEY_ID={os.environ.get('AWS_ACCESS_KEY_ID', '')}
@@ -82,9 +90,10 @@ compose_content = f"""services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://{RDS_HOST}:5432/{RDS_DB}
       SPRING_DATASOURCE_USERNAME: {RDS_USER}
       SPRING_DATASOURCE_PASSWORD: {RDS_PASS}
-      APP_JWT_SECRET: prod-jwt-secret-digital-library-2026-super-secure-key-xyz
+      APP_JWT_SECRET: {JWT_SECRET}
       APP_JWT_EXPIRATION_MS: 86400000
       APP_JWT_REFRESH_EXPIRATION_DAYS: 7
+      APP_CORS_ALLOWED_ORIGINS: {CORS_ALLOWED_ORIGINS}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SPRING_CACHE_TYPE: redis

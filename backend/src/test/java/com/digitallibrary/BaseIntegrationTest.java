@@ -30,6 +30,7 @@ public abstract class BaseIntegrationTest {
     @Autowired protected ReadingHistoryRepository readingHistoryRepository;
     @Autowired protected RefreshTokenRepository refreshTokenRepository;
     @Autowired protected AuditLogRepository auditLogRepository;
+    @Autowired protected PaymentRepository paymentRepository;
     @Autowired protected PasswordEncoder passwordEncoder;
     @Autowired protected JwtService jwtService;
 
@@ -40,6 +41,7 @@ public abstract class BaseIntegrationTest {
         readingHistoryRepository.deleteAll();
         refreshTokenRepository.deleteAll();
         auditLogRepository.deleteAll();
+        paymentRepository.deleteAll();
         bookRepository.deleteAll();
         appUserRepository.deleteAll();
     }

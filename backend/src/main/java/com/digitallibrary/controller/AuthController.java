@@ -105,10 +105,4 @@ public class AuthController {
         }
         return ApiResponse.success("Logout successful", "Session ended");
     }
-
-    @GetMapping("/demo-users")
-    public ApiResponse<String> demoUsers() {
-        return ApiResponse.success("Demo accounts",
-                "admin@library.com/admin123, user@library.com/user123, vendor@library.com/vendor123");
-    }
 }

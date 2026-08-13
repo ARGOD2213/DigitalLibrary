@@ -4,6 +4,7 @@ import com.digitallibrary.dto.CheckoutRequest;
 import com.digitallibrary.dto.PageResponse;
 import com.digitallibrary.dto.PaymentResponse;
 import com.digitallibrary.entity.*;
+import com.digitallibrary.exception.AuthenticationException;
 import com.digitallibrary.exception.ResourceNotFoundException;
 import com.digitallibrary.repository.*;
 import com.digitallibrary.service.AwsNotificationService;
@@ -11,15 +12,22 @@ import com.digitallibrary.service.CommissionService;
 import com.digitallibrary.service.PaymentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -33,6 +41,15 @@ public class PaymentServiceImpl implements PaymentService {
     private final AppUserRepository appUserRepository;
     private final CommissionService commissionService;
     private final AwsNotificationService awsNotificationService;
+
+    @Value("${app.payment.webhook-secret.stripe:}")
+    private String stripeWebhookSecret;
+
+    @Value("${app.payment.webhook-secret.razorpay:}")
+    private String razorpayWebhookSecret;
+
+    @Value("${app.payment.webhook-secret.mock:}")
+    private String mockWebhookSecret;
 
     public PaymentServiceImpl(PaymentRepository paymentRepository,
                               OrderRepository orderRepository,
@@ -121,14 +138,18 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public PaymentResponse handleWebhook(String gateway, String payload, String signature) {
-        // In production: verify webhook signature from Stripe/Razorpay
-        // For now, we simulate webhook processing with signature validation placeholder
-        log.info("Received {} webhook. Signature: {}", gateway, signature);
+        verifyWebhookSignature(gateway, payload, signature);
 
         // Parse the payload — in production this would be JSON from Stripe/Razorpay
         // For now we'll use the payload as the transaction ID
         Payment payment = paymentRepository.findByTransactionId(payload)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found for transaction: " + payload));
+
+        if ("SUCCESS".equals(payment.getStatus())) {
+            // Already processed — gateways retry webhooks, so this must be a no-op, not a re-count.
+            log.info("Webhook for transaction {} already processed, skipping", payment.getTransactionId());
+            return PaymentResponse.fromEntity(payment);
+        }
 
         payment.setStatus("SUCCESS");
         payment.setRawResponse("webhook_verified_at=" + LocalDateTime.now());
@@ -154,6 +175,60 @@ public class PaymentServiceImpl implements PaymentService {
         awsNotificationService.sendEmail(payment.getUser().getEmail(), subject, body);
 
         return PaymentResponse.fromEntity(savedPayment);
+    }
+
+    /**
+     * Rejects the webhook unless {@code signature} is a valid HMAC-SHA256 of {@code payload}
+     * under the secret configured for {@code gateway}. A gateway with no configured secret is
+     * rejected outright (fail closed) rather than trusted — this endpoint is unauthenticated
+     * since real gateways can't attach a user JWT.
+     */
+    private void verifyWebhookSignature(String gateway, String payload, String signature) {
+        String secret = resolveWebhookSecret(gateway);
+        if (secret == null || secret.isBlank()) {
+            throw new AuthenticationException("Webhook not configured for gateway: " + gateway);
+        }
+        if (signature == null || signature.isBlank()) {
+            throw new AuthenticationException("Missing webhook signature");
+        }
+
+        String candidate = signature.contains("=") ? signature.substring(signature.indexOf('=') + 1) : signature;
+        String expected = hmacSha256Hex(secret, payload == null ? "" : payload);
+
+        boolean valid;
+        try {
+            valid = MessageDigest.isEqual(
+                    expected.getBytes(StandardCharsets.UTF_8),
+                    candidate.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            valid = false;
+        }
+        if (!valid) {
+            throw new AuthenticationException("Invalid webhook signature");
+        }
+    }
+
+    private String resolveWebhookSecret(String gateway) {
+        if (gateway == null) {
+            return null;
+        }
+        return switch (gateway.toLowerCase(Locale.ROOT)) {
+            case "stripe" -> stripeWebhookSecret;
+            case "razorpay" -> razorpayWebhookSecret;
+            case "mock" -> mockWebhookSecret;
+            default -> null;
+        };
+    }
+
+    private String hmacSha256Hex(String secret, String payload) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] hash = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to compute webhook signature", e);
+        }
     }
 
     @Override

@@ -8,6 +8,7 @@ import time
 import os
 import sys
 import json
+import urllib.request
 
 REGION = "ap-south-1"
 AWS_KEY = os.environ.get("AWS_ACCESS_KEY_ID", "")
@@ -15,7 +16,9 @@ AWS_SECRET = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
 
 DB_NAME = "digital_library"
 DB_USER = "dlibadmin"
-DB_PASS = "DigLib2026Secure"
+DB_PASS = os.environ.get("DB_MASTER_PASSWORD", "")
+if not DB_PASS:
+    sys.exit("DB_MASTER_PASSWORD env var is required (RDS master password) — refusing to use a hardcoded default.")
 
 EC2_KEY_NAME = "digital-library-key"
 SG_NAME = "digital-library-sg"
@@ -48,39 +51,48 @@ subnets = ec2.describe_subnets(Filters=[{"Name": "vpc-id", "Values": [vpc_id]}])
 subnet_ids = [s["SubnetId"] for s in subnets["Subnets"]]
 print(f"Subnets: {subnet_ids}")
 
-# ─── Step 2: Security Group ───────────────────────────────────────
-step("Step 2: Create/Get Security Group")
-existing = ec2.describe_security_groups(
-    Filters=[
-        {"Name": "group-name", "Values": [SG_NAME]},
-        {"Name": "vpc-id", "Values": [vpc_id]}
-    ]
-)
-if existing["SecurityGroups"]:
-    sg_id = existing["SecurityGroups"][0]["GroupId"]
-    print(f"Security group already exists: {sg_id}")
-else:
-    sg = ec2.create_security_group(
-        GroupName=SG_NAME,
-        Description="Digital Library App Security Group",
-        VpcId=vpc_id
+# ─── Step 2: Security Groups ───────────────────────────────────────
+step("Step 2: Create/Get Security Groups")
+
+def get_or_create_sg(name, description):
+    existing = ec2.describe_security_groups(
+        Filters=[{"Name": "group-name", "Values": [name]}, {"Name": "vpc-id", "Values": [vpc_id]}]
     )
-    sg_id = sg["GroupId"]
-    print(f"Created security group: {sg_id}")
-    for port in [22, 80, 443, 3000, 8000, 5432]:
-        try:
-            ec2.authorize_security_group_ingress(
-                GroupId=sg_id,
-                IpPermissions=[{
-                    "IpProtocol": "tcp",
-                    "FromPort": port,
-                    "ToPort": port,
-                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}]
-                }]
-            )
-        except Exception:
-            pass
-    print("Opened ports: 22, 80, 443, 3000, 8000, 5432")
+    if existing["SecurityGroups"]:
+        return existing["SecurityGroups"][0]["GroupId"], False
+    sg = ec2.create_security_group(GroupName=name, Description=description, VpcId=vpc_id)
+    return sg["GroupId"], True
+
+# App/EC2 security group — SSH restricted to the operator's current IP, web/app ports public.
+sg_id, sg_created = get_or_create_sg(SG_NAME, "Digital Library App Security Group (EC2)")
+if sg_created:
+    print(f"Created app security group: {sg_id}")
+    my_ip = urllib.request.urlopen("https://checkip.amazonaws.com", timeout=5).read().decode().strip()
+    ssh_cidr = f"{my_ip}/32"
+    for port, cidr in [(22, ssh_cidr), (80, "0.0.0.0/0"), (443, "0.0.0.0/0"),
+                        (3000, "0.0.0.0/0"), (8000, "0.0.0.0/0")]:
+        ec2.authorize_security_group_ingress(
+            GroupId=sg_id,
+            IpPermissions=[{"IpProtocol": "tcp", "FromPort": port, "ToPort": port, "IpRanges": [{"CidrIp": cidr}]}]
+        )
+    print(f"Opened ports: 22 (restricted to {ssh_cidr}), 80, 443, 3000, 8000 (public)")
+else:
+    print(f"App security group already exists: {sg_id}")
+
+# DB security group — Postgres reachable only from the app security group, never the internet.
+db_sg_id, db_sg_created = get_or_create_sg(f"{SG_NAME}-db", "Digital Library DB Security Group (RDS)")
+if db_sg_created:
+    print(f"Created DB security group: {db_sg_id}")
+    ec2.authorize_security_group_ingress(
+        GroupId=db_sg_id,
+        IpPermissions=[{
+            "IpProtocol": "tcp", "FromPort": 5432, "ToPort": 5432,
+            "UserIdGroupPairs": [{"GroupId": sg_id}]
+        }]
+    )
+    print("Opened port 5432 to the app security group only")
+else:
+    print(f"DB security group already exists: {db_sg_id}")
 
 # ─── Step 3: RDS Subnet Group ─────────────────────────────────────
 step("Step 3: RDS Subnet Group")
@@ -111,9 +123,9 @@ except Exception:
         DBName=DB_NAME,
         AllocatedStorage=20,
         StorageType="gp2",
-        VpcSecurityGroupIds=[sg_id],
+        VpcSecurityGroupIds=[db_sg_id],
         DBSubnetGroupName="digital-library-db-subnet-group",
-        PubliclyAccessible=True,
+        PubliclyAccessible=False,
         BackupRetentionPeriod=1,
         MultiAZ=False,
         Tags=[{"Key": "Name", "Value": "digital-library-db"}]
