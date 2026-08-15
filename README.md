@@ -1,5 +1,11 @@
 # Digital Library - Full Stack Learning Project
 
+## Delivery workflow
+
+Changes are submitted as pull requests to `main`. GitHub Actions validates the
+backend and frontend; one approval is required before merging. Each approved
+merge automatically publishes the Docker images and deploys them to EC2.
+
 Beginner-friendly full-stack app using:
 
 - Backend: Java Spring Boot
