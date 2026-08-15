@@ -241,6 +241,10 @@ jobs:
           FRONTEND_IMAGE: ${{ env.IMAGE_FRONTEND }}:${{ github.sha }}
         run: |
           cd /app
+          # GHCR rejects uppercase repository path components; docker/metadata-action
+          # lowercases automatically when pushing, so match that here when pulling.
+          BACKEND_IMAGE=$(echo "$BACKEND_IMAGE" | tr '[:upper:]' '[:lower:]')
+          FRONTEND_IMAGE=$(echo "$FRONTEND_IMAGE" | tr '[:upper:]' '[:lower:]')
           BACKEND_IMAGE="$BACKEND_IMAGE" FRONTEND_IMAGE="$FRONTEND_IMAGE" \
             docker compose -f docker-compose.yml -f docker-compose.ci.override.yml pull backend frontend
           BACKEND_IMAGE="$BACKEND_IMAGE" FRONTEND_IMAGE="$FRONTEND_IMAGE" \
