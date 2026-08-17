@@ -3,6 +3,7 @@ package com.digitallibrary.controller;
 import com.digitallibrary.dto.ApiResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -56,7 +57,10 @@ public class HealthController {
         }
 
         boolean allUp = status.values().stream().allMatch(v -> "UP".equals(v) || "DISABLED".equals(v));
-        String message = allUp ? "All systems operational" : "One or more services are degraded";
-        return ResponseEntity.ok(ApiResponse.success(message, status));
+        if (!allUp) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApiResponse.error("One or more services are degraded", status));
+        }
+        return ResponseEntity.ok(ApiResponse.success("All systems operational", status));
     }
 }

@@ -1,0 +1,10 @@
+# This file is layered on top of /app/docker-compose.yml by GitHub Actions.
+# Production settings and secrets remain in the server's base compose file.
+services:
+  backend:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE must be set}
+    pull_policy: always
+
+  frontend:
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE must be set}
+    pull_policy: always
