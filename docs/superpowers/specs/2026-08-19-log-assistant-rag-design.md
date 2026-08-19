@@ -6,25 +6,29 @@
 
 ## Problem
 
-The team has no way to ask "what went wrong" or "why was the API slow" without manually grepping `backend-dev.out.log` / `backend-dev.err.log` (or, in production, SSH-ing into the EC2 box and reading `docker logs`). This spec covers a retrieval-augmented assistant that answers natural-language questions over the backend's logs, admin-only, inside the existing React frontend.
+The team has no way to ask "what went wrong" or "why was the API slow" without manually grepping log output (or, in production, SSH-ing into the EC2 box and reading `docker logs`). This spec covers a retrieval-augmented assistant that answers natural-language questions over the backend's logs, admin-only, inside the existing React frontend.
+
+Note: the `backend-dev.out.log` / `backend-dev.err.log` files present in the repo today are leftovers from an ad-hoc manual run (`mvn spring-boot:run > backend-dev.out.log 2> backend-dev.err.log`, most likely) — there is no `logging.file.name` or logback config in `application.properties`, no dev-run script, and nothing in `docker-compose.yml` that produces them reliably. This spec includes adding real file-logging config as a prerequisite (see Component 1), rather than assuming those files already exist in a dependable way.
 
 A future phase (not built here) adds a proactive watcher that detects anomalies (error spikes, latency jumps) without being asked, and alerts via the app's existing SES/SNS notification service.
 
 ## Non-goals (v1)
 
 - No vector embeddings / semantic similarity search. Logs are structured and timestamped; time-range + level + keyword filtering is retrieval enough for launch. pgvector is the noted upgrade path if log volume or query sophistication grows.
-- No production/CloudWatch log ingestion. Local dev logs (`backend-dev.out.log`, `backend-dev.err.log`) only.
+- No production/CloudWatch log ingestion. The local dev log file (see Component 1) only.
 - No proactive alerting/anomaly detection (phase 2).
 - No Slack or other external integrations. UI lives in the existing React admin panel.
 - Redis is not used as a vector store. The `redis:7-alpine` image in `docker-compose.yml` has no RediSearch module, and mixing a durable log index into the same store used for JWT blacklists and rate-limit counters is the wrong fit. Redis's role here is limited to caching the recent-log hot window and recent answers, matching how it's already used elsewhere in this app (Spring Cache).
 
 ## Architecture
 
+Data flow (top to bottom), not a call/dependency chain — the controller is the actual entry point and invokes the service, which in turn uses the tailer's stored data:
+
 ```
-backend-dev.out.log / .err.log
+logging.file.name (new logback config, see Component 1)
         |
         v
-  LogTailerService (tails files, parses lines, handles multi-line stack traces)
+  LogTailerService (tails the file, parses lines, handles multi-line stack traces)
         |
         v
   log_entries table (Postgres, via Flyway migration V2)
@@ -49,23 +53,32 @@ backend-dev.out.log / .err.log
 
 ## Components
 
-### 1. Ingestion — `LogTailerService`
+### 1. Log production — `application.properties`
+
+Before there's anything to tail, the backend needs to reliably produce a log file. Add to `backend/src/main/resources/application.properties`:
+
+```properties
+logging.file.name=logs/digital-library-backend.log
+```
+
+This turns on Spring Boot's default logback rolling-file appender (in addition to the existing console output — nothing about current dev workflow changes): all log levels the app already emits (INFO/WARN/ERROR/DEBUG, from any logger) go to this one file at a known path, with real size/date-based rotation and archiving handled by logback's default policy. This replaces the stale `backend-dev.out.log`/`backend-dev.err.log` files as the ingestion source — a single file is sufficient since `level` is already parsed per-line, so there's no need to separate stdout/stderr into two files. The `logs/` directory should be added to `.gitignore` alongside the existing dev log files.
+
+### 2. Ingestion — `LogTailerService`
 
 - New package: `com.digitallibrary.logassistant`.
-- Runs as a background component (Spring `@Scheduled` poll, e.g. every 5s — not a raw thread, to stay consistent with the existing `SubscriptionExpiryScheduler` pattern) that tails both log files from a persisted byte offset.
-- The offset is persisted in a new `log_tailer_state` table (one row per source: `source`, `file_path`, `byte_offset`, `updated_at`), created in the same `V2` migration as `log_entries`. Each poll cycle updates the offset in the same transaction as its `log_entries` batch insert, so a crash mid-cycle re-reads (and re-inserts) at most one batch rather than the whole file — duplicate rows from that edge case are an accepted v1 tradeoff, not silently unhandled.
+- Runs as a background component (Spring `@Scheduled` poll, e.g. every 5s — not a raw thread, to stay consistent with the existing `SubscriptionExpiryScheduler` pattern) that tails `logs/digital-library-backend.log` from a persisted byte offset.
+- The offset is persisted in a new `log_tailer_state` table (single row: `file_path`, `byte_offset`, `updated_at`), created in the same `V2` migration as `log_entries`. Each poll cycle updates the offset in the same transaction as its `log_entries` batch insert, so a crash mid-cycle re-reads (and re-inserts) at most one batch rather than the whole file — duplicate rows from that edge case are an accepted v1 tradeoff, not silently unhandled.
 - Parses each line using the default Spring Boot log pattern (`timestamp level pid --- [thread] logger : message`). Lines that don't match the pattern (stack trace continuation lines) are appended to the previous entry's `message`.
-- Detects log rotation/truncation by checking if file size has decreased since last read; on truncation, resets the offset to 0 (in both the in-memory reader and `log_tailer_state`).
+- Detects log rotation by checking if file size has decreased since last read (a real, well-defined event now that logback's rolling policy — not shell redirection — owns rotation); on rotation, resets the offset to 0 (in both the in-memory reader and `log_tailer_state`). Rotated/archived files are not backfilled in v1 — only the active file is tailed.
 - Batches inserts to `log_entries` (e.g. every poll cycle, capped batch size) rather than one INSERT per line.
 
-### 2. Storage — `log_entries` table
+### 3. Storage — `log_entries` table
 
 New Flyway migration `V2__create_log_entries.sql`:
 
 ```sql
 CREATE TABLE log_entries (
     id BIGSERIAL PRIMARY KEY,
-    source VARCHAR(20) NOT NULL,        -- 'stdout' | 'stderr'
     logged_at TIMESTAMP NOT NULL,
     level VARCHAR(10) NOT NULL,         -- INFO, WARN, ERROR, DEBUG
     logger VARCHAR(255),
@@ -78,10 +91,11 @@ CREATE INDEX idx_log_entries_logged_at ON log_entries (logged_at);
 CREATE INDEX idx_log_entries_level ON log_entries (level);
 
 CREATE TABLE log_tailer_state (
-    source VARCHAR(20) PRIMARY KEY,     -- 'stdout' | 'stderr'
+    id SMALLINT PRIMARY KEY DEFAULT 1,
     file_path VARCHAR(500) NOT NULL,
     byte_offset BIGINT NOT NULL DEFAULT 0,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT single_row CHECK (id = 1)
 );
 ```
 
@@ -94,35 +108,35 @@ CREATE INDEX idx_log_entries_message_trgm ON log_entries USING GIN (message gin_
 
 A scheduled cleanup job (same scheduler package) prunes rows older than a configurable retention window (default 14 days) so the table doesn't grow unbounded on a dev machine.
 
-### 3. Retrieval — `LogAssistantService`
+### 4. Retrieval — `LogAssistantService`
 
 - Input: a natural-language question.
-- v1 filter derivation: simple rule-based extraction (keywords like "today", "last hour", "errors", "slow" map to time-range/level filters). No LLM call needed for this step in v1 — keeps it cheap and deterministic. If this proves too limited, upgrading to LLM-assisted structured-filter extraction (tool-use/function-calling) is a follow-up, not a blocker for v1.
+- v1 filter derivation: simple rule-based extraction (keywords like "today", "last hour", "errors", "slow" map to time-range/level filters). Filters resolve to an explicit `[from, to]` timestamp range; if no time keyword is matched, default to the last 6 hours (not the full table) so an unrecognized question doesn't trigger a full scan. No LLM call needed for this step in v1 — keeps it cheap and deterministic. If this proves too limited, upgrading to LLM-assisted structured-filter extraction (tool-use/function-calling) is a follow-up, not a blocker for v1.
 - Queries `log_entries` with the derived filter, capped to a token-safe number of rows (e.g. top 50 most relevant by recency within the filtered set).
 - Redis usage:
   - Caches the last N minutes of parsed entries (the "hot window") so repeated questions about recent activity don't re-hit Postgres.
-  - Caches recent question → answer pairs (keyed by normalized question + time bucket), with a 10-minute TTL, to avoid redundant LLM calls for repeated questions.
+  - Caches recent question → answer pairs (keyed by normalized question + time bucket), with a 10-minute TTL — **but only when the derived filter's `to` timestamp is more than 5 minutes in the past** (i.e. a genuinely historical, immutable query window). Questions whose filter reaches up to "now" (the tool's primary live-triage use case) always skip the cache and query fresh, so a new ERROR is reflected immediately rather than hidden behind a stale cached answer.
 - **Redaction before the prompt is built**: this app's own logs already contain PII (e.g. `PaymentServiceImpl` logs the user's email, order number, and transaction ID on checkout). A `LogRedactor` step runs over every matched line before it is included in the LLM prompt, masking email addresses and known identifier patterns (order/transaction IDs) with placeholders (e.g. `user@***`, `[ORDER_ID]`). This is a required step, not optional — matched lines are sent to a third-party API (Claude) and must not carry raw PII off-platform. The **citedEntries returned to the frontend also carry the redacted message**, not the raw one, so the admin UI never displays unredacted PII either.
-- Builds a prompt containing the redacted log lines (with timestamps) and the user's question, calls `LlmClient`, returns the answer plus the specific (redacted) log entries it cited.
+- Builds a prompt containing all redacted, matched log lines (with timestamps) and the user's question, calls `LlmClient`, and returns the answer alongside those same matched entries as `citedEntries`. **`citedEntries` means "the context rows the answer was generated from," not a model-selected citation subset** — `LlmClient.ask` returns a plain string (see Component 5) with no mechanism for the model to indicate which specific rows it drew on, so the API always returns the full context set it was given. This is also why the LLM-unavailable fallback path can reuse the same field/shape to hold the raw matched entries directly.
 
-### 4. LLM integration — `LlmClient` interface
+### 5. LLM integration — `LlmClient` interface
 
 - `LlmClient.ask(String systemContext, String question) -> String`.
 - `AnthropicLlmClient` is the only implementation in v1, and is wired as the single `LlmClient` Spring bean directly — no provider-selection config, since there is nothing yet to select between. When a second implementation (e.g. a local/offline model via Ollama) is added later, that's the point at which a provider-switch mechanism (conditional `@Bean`, config property, etc.) gets designed — not before.
 - New config: `ANTHROPIC_API_KEY=`, `LOG_ASSISTANT_MODEL=` (default to a Haiku model id), added to `.env.example` alongside the existing AWS/Redis config blocks.
 - The interface boundary (`LlmClient`) is what makes a future local/offline model a new implementation rather than a rewrite — matches the user's stated preference to use an API now and revisit offline later.
 
-### 5. API — `AdminLogAssistantController`
+### 6. API — `AdminLogAssistantController`
 
 - `POST /api/admin/log-assistant/ask` — body `{ "question": string }`, response `{ "answer": string, "citedEntries": [{ id, loggedAt, level, message }] }`.
 - `question` is validated as non-blank with a max length (e.g. 500 chars) via `@Valid`/Bean Validation, consistent with existing request DTOs — rejected with the app's standard validation error response, not passed to the LLM.
 - `ROLE_ADMIN` only, consistent with `/api/admin/audit-logs`.
 - Rate-limited via the existing Bucket4j `RateLimitFilter` (blanket 60 req/min/IP, shared across the whole API) — no new rate-limit infra needed for v1. Since LLM calls carry real per-call cost, a stricter per-endpoint limit is a noted follow-up if usage patterns warrant it, not a v1 blocker.
 
-### 6. Frontend — Log Assistant admin page
+### 7. Frontend — Log Assistant admin page
 
 - New route/page in the React admin section (e.g. `/admin/log-assistant`), linked from the same admin nav area as the existing audit log page.
-- Chat-style input/response list; each answer displays its cited log lines (timestamp + level + redacted message) so the admin can verify the assistant's claim against the source.
+- Chat-style input/response list; each answer displays its cited log lines (timestamp + level + redacted message) in a collapsed/expandable block (up to 50 lines is too much to always render inline) so the admin can verify the assistant's claim against the source.
 - Loading state: input disabled and a spinner/placeholder shown in the response list while the request is in flight.
 - The two backend fallback responses each get distinct rendering, not treated as errors:
   - **No matching log entries**: response list shows a plain "No log entries matched that question" message, no citations block.
@@ -132,7 +146,7 @@ A scheduled cleanup job (same scheduler package) prunes rows older than a config
 ## Error handling
 
 - **LLM call fails or times out**: fall back to returning the raw matched log entries with a note that summarization was unavailable, rather than a hard error.
-- **Log file rotated/truncated**: detected via file-size check; tailer offset resets to 0 and resumes.
+- **Log file rotated**: logback's rolling policy (from the `logging.file.name` config in Component 1) renames the active file when it exceeds its size threshold and starts a fresh one at the same path; detected via file-size check, tailer offset resets to 0 and resumes on the new file. Already-rotated/archived files are not backfilled.
 - **No log entries match the derived filter**: return a clear "no matching log entries found" response instead of calling the LLM with empty context.
 - **Redis unavailable**: cache reads/writes fail open (service falls back to querying Postgres directly) — matches how the rest of the app already treats Redis as a cache, not a source of truth.
 
