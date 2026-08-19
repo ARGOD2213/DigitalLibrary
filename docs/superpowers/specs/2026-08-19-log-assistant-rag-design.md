@@ -34,6 +34,10 @@ backend-dev.out.log / .err.log
                         -> caches hot window + recent answers in Redis)
         |
         v
+  LogRedactor (masks emails / order / transaction IDs before anything
+               leaves the backend)
+        |
+        v
   LlmClient (interface; AnthropicLlmClient implementation calls Claude)
         |
         v
@@ -49,8 +53,9 @@ backend-dev.out.log / .err.log
 
 - New package: `com.digitallibrary.logassistant`.
 - Runs as a background component (Spring `@Scheduled` poll, e.g. every 5s — not a raw thread, to stay consistent with the existing `SubscriptionExpiryScheduler` pattern) that tails both log files from a persisted byte offset.
+- The offset is persisted in a new `log_tailer_state` table (one row per source: `source`, `file_path`, `byte_offset`, `updated_at`), created in the same `V2` migration as `log_entries`. Each poll cycle updates the offset in the same transaction as its `log_entries` batch insert, so a crash mid-cycle re-reads (and re-inserts) at most one batch rather than the whole file — duplicate rows from that edge case are an accepted v1 tradeoff, not silently unhandled.
 - Parses each line using the default Spring Boot log pattern (`timestamp level pid --- [thread] logger : message`). Lines that don't match the pattern (stack trace continuation lines) are appended to the previous entry's `message`.
-- Detects log rotation/truncation by checking if file size has decreased since last read; on truncation, resets the offset to 0.
+- Detects log rotation/truncation by checking if file size has decreased since last read; on truncation, resets the offset to 0 (in both the in-memory reader and `log_tailer_state`).
 - Batches inserts to `log_entries` (e.g. every poll cycle, capped batch size) rather than one INSERT per line.
 
 ### 2. Storage — `log_entries` table
@@ -71,6 +76,20 @@ CREATE TABLE log_entries (
 
 CREATE INDEX idx_log_entries_logged_at ON log_entries (logged_at);
 CREATE INDEX idx_log_entries_level ON log_entries (level);
+
+CREATE TABLE log_tailer_state (
+    source VARCHAR(20) PRIMARY KEY,     -- 'stdout' | 'stderr'
+    file_path VARCHAR(500) NOT NULL,
+    byte_offset BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+Keyword filtering (e.g. `ILIKE '%keyword%'` over `message`) is a supported query type, so a `pg_trgm` GIN index on `message` is included here rather than left as a later fix:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX idx_log_entries_message_trgm ON log_entries USING GIN (message gin_trgm_ops);
 ```
 
 A scheduled cleanup job (same scheduler package) prunes rows older than a configurable retention window (default 14 days) so the table doesn't grow unbounded on a dev machine.
@@ -82,26 +101,33 @@ A scheduled cleanup job (same scheduler package) prunes rows older than a config
 - Queries `log_entries` with the derived filter, capped to a token-safe number of rows (e.g. top 50 most relevant by recency within the filtered set).
 - Redis usage:
   - Caches the last N minutes of parsed entries (the "hot window") so repeated questions about recent activity don't re-hit Postgres.
-  - Caches recent question → answer pairs (keyed by normalized question + time bucket) to avoid redundant LLM calls for repeated questions.
-- Builds a prompt containing the matched log lines (with timestamps) and the user's question, calls `LlmClient`, returns the answer plus the specific log entries it cited.
+  - Caches recent question → answer pairs (keyed by normalized question + time bucket), with a 10-minute TTL, to avoid redundant LLM calls for repeated questions.
+- **Redaction before the prompt is built**: this app's own logs already contain PII (e.g. `PaymentServiceImpl` logs the user's email, order number, and transaction ID on checkout). A `LogRedactor` step runs over every matched line before it is included in the LLM prompt, masking email addresses and known identifier patterns (order/transaction IDs) with placeholders (e.g. `user@***`, `[ORDER_ID]`). This is a required step, not optional — matched lines are sent to a third-party API (Claude) and must not carry raw PII off-platform. The **citedEntries returned to the frontend also carry the redacted message**, not the raw one, so the admin UI never displays unredacted PII either.
+- Builds a prompt containing the redacted log lines (with timestamps) and the user's question, calls `LlmClient`, returns the answer plus the specific (redacted) log entries it cited.
 
 ### 4. LLM integration — `LlmClient` interface
 
 - `LlmClient.ask(String systemContext, String question) -> String`.
-- `AnthropicLlmClient` implementation (v1): calls the Claude API (Haiku model by default — this is log summarization, not deep reasoning) using an API key from config.
-- New config: `LOG_ASSISTANT_LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY=`, `LOG_ASSISTANT_MODEL=` (default to a Haiku model id), added to `.env.example` alongside the existing AWS/Redis config blocks.
-- The interface boundary means a future local/offline model (e.g. via Ollama) is a new `LlmClient` implementation, not a rewrite — matches the user's stated preference to use an API now and revisit offline later.
+- `AnthropicLlmClient` is the only implementation in v1, and is wired as the single `LlmClient` Spring bean directly — no provider-selection config, since there is nothing yet to select between. When a second implementation (e.g. a local/offline model via Ollama) is added later, that's the point at which a provider-switch mechanism (conditional `@Bean`, config property, etc.) gets designed — not before.
+- New config: `ANTHROPIC_API_KEY=`, `LOG_ASSISTANT_MODEL=` (default to a Haiku model id), added to `.env.example` alongside the existing AWS/Redis config blocks.
+- The interface boundary (`LlmClient`) is what makes a future local/offline model a new implementation rather than a rewrite — matches the user's stated preference to use an API now and revisit offline later.
 
 ### 5. API — `AdminLogAssistantController`
 
 - `POST /api/admin/log-assistant/ask` — body `{ "question": string }`, response `{ "answer": string, "citedEntries": [{ id, loggedAt, level, message }] }`.
+- `question` is validated as non-blank with a max length (e.g. 500 chars) via `@Valid`/Bean Validation, consistent with existing request DTOs — rejected with the app's standard validation error response, not passed to the LLM.
 - `ROLE_ADMIN` only, consistent with `/api/admin/audit-logs`.
-- Rate-limited via the existing Bucket4j `RateLimitFilter` — no new rate-limit infra needed.
+- Rate-limited via the existing Bucket4j `RateLimitFilter` (blanket 60 req/min/IP, shared across the whole API) — no new rate-limit infra needed for v1. Since LLM calls carry real per-call cost, a stricter per-endpoint limit is a noted follow-up if usage patterns warrant it, not a v1 blocker.
 
 ### 6. Frontend — Log Assistant admin page
 
-- New page in the React admin section, alongside the existing audit log view.
-- Chat-style input/response list; each answer displays its cited log lines (timestamp + level + message) so the admin can verify the assistant's claim against the source.
+- New route/page in the React admin section (e.g. `/admin/log-assistant`), linked from the same admin nav area as the existing audit log page.
+- Chat-style input/response list; each answer displays its cited log lines (timestamp + level + redacted message) so the admin can verify the assistant's claim against the source.
+- Loading state: input disabled and a spinner/placeholder shown in the response list while the request is in flight.
+- The two backend fallback responses each get distinct rendering, not treated as errors:
+  - **No matching log entries**: response list shows a plain "No log entries matched that question" message, no citations block.
+  - **LLM unavailable (fallback path)**: response list shows the raw matched log entries directly (same citation format as a normal answer) with a small inline note that summarization was unavailable, rather than a generated answer.
+- A true request failure (network error, 5xx, validation rejection) shows a standard inline error message and re-enables the input.
 
 ## Error handling
 
@@ -114,8 +140,10 @@ A scheduled cleanup job (same scheduler package) prunes rows older than a config
 
 - Unit tests for the log line parser, including multi-line stack trace continuation and malformed lines.
 - Unit tests for filter derivation (question → time range/level/keyword filter) covering the supported keyword patterns.
-- Integration test for `POST /api/admin/log-assistant/ask` with a mocked `LlmClient`, covering: happy path, no-matches path, LLM-failure fallback path.
-- Manual verification: run the backend locally, generate some ERROR/WARN log lines, confirm the admin page surfaces them correctly with accurate citations.
+- Unit tests for `LogRedactor`, covering email addresses and order/transaction ID patterns pulled from the app's actual log statements (e.g. the `PaymentServiceImpl` checkout log).
+- Unit tests for log rotation/truncation detection in `LogTailerService` (file size decreases → offset resets to 0, both in-memory and in `log_tailer_state`).
+- Integration test for `POST /api/admin/log-assistant/ask` with a mocked `LlmClient`, covering all four error-handling scenarios: happy path, no-matches path, LLM-failure fallback path, and Redis-unavailable fail-open path (cache calls fail, service still answers correctly from Postgres).
+- Manual verification: run the backend locally, generate some ERROR/WARN log lines (including one with an email/order ID), confirm the admin page surfaces them correctly with accurate, redacted citations.
 
 ## Future work (explicitly out of scope here)
 
