@@ -54,7 +54,7 @@ Each of the ~8 (configurable) concurrent workers loops indefinitely: pick or cre
 - **Vendor** (occasional): login-or-register → `POST /api/vendors/apply` → (on a later loop, once approved) `POST /api/books` with faker-generated title/author/price → `GET /api/vendors/me/commissions`.
 - **Admin** (rare, always the seeded `admin@library.com`): `GET /api/vendors/pending` → `PUT /api/vendors/{id}/approve` for each pending application → `GET /api/admin/audit-logs`. This is also what unblocks the vendor journey's second half.
 
-Each journey step is independent and skippable on failure (e.g. a subscribe call failing because the user already has a subscription doesn't abort the whole journey) — a worker logs the failure to its stats and moves to the next step or the next loop iteration, since the goal is sustained traffic, not an all-or-nothing transaction.
+Each journey step is independent and skippable on failure (e.g. a checkout call failing because a book referenced in `bookIds` was deleted since it was last browsed doesn't abort the whole journey) — a worker logs the failure to its stats and moves to the next step or the next loop iteration, since the goal is sustained traffic, not an all-or-nothing transaction. Note that repeat `subscribe` calls are not one of these failure cases — `SubscriptionServiceImpl.subscribeUser` always succeeds, cancelling any existing active subscription and creating a new one, so a pooled reader re-subscribing on a later loop is expected, ordinary behavior, not an error path.
 
 ### Safety guardrail (`safety.js`)
 
