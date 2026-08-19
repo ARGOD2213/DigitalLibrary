@@ -18,6 +18,8 @@ Tasks 1–6: package setup plus the pure, independently-testable building blocks
 
 ### File Structure
 
+This is the final tree the whole plan builds toward. Chunk 1 (Tasks 1–6 below) creates only `package.json`, `.gitignore`, `config.js`, `safety.js` + test, `stats.js` + test, `apiClient.js`, and `userPool.js` + test; the rest (`bootstrap.js`, `journeys/`, `index.js`, `README.md`) are Chunk 2.
+
 ```
 tools/traffic-bot/
   package.json          deps: axios, @faker-js/faker; "start" script
@@ -929,6 +931,19 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Like sleep(), but wakes up early (in <=200ms) once `running.value` flips to
+// false, so Ctrl+C doesn't have to wait out a long interval (e.g. the 20s
+// default admin sweep) before the final report can print.
+async function interruptibleSleep(ms, running) {
+  const step = 200;
+  let waited = 0;
+  while (waited < ms && running.value) {
+    const chunk = Math.min(step, ms - waited);
+    await sleep(chunk);
+    waited += chunk;
+  }
+}
+
 function randomDelay(config) {
   const span = config.maxDelayMs - config.minDelayMs;
   return config.minDelayMs + Math.floor(Math.random() * span);
@@ -957,14 +972,14 @@ async function runReaderOrVendorWorker(config, stats, pool, planIds, running) {
       const vendorRecord = await pool.getVendorClient().catch(() => null);
       if (vendorRecord) await runVendorJourney(vendorRecord, stats);
     }
-    await sleep(randomDelay(config));
+    await interruptibleSleep(randomDelay(config), running);
   }
 }
 
 async function runAdminWorker(config, adminClient, running) {
   while (running.value) {
     await runAdminSweep(adminClient);
-    await sleep(config.adminSweepIntervalMs);
+    await interruptibleSleep(config.adminSweepIntervalMs, running);
   }
 }
 
@@ -1123,7 +1138,7 @@ Expected: the count grows if you run this again a minute later (vendor-published
 - [ ] **Step 5: Confirm the safety guard**
 
 Run: `TRAFFIC_BOT_TARGET_URL=http://example.com npm start`
-Expected: immediate refusal — `Refusing to run: target "http://example.com" is not localhost/127.0.0.1...` — process exits without sending any traffic.
+Expected: immediate refusal — `Traffic bot failed to start: Refusing to run: target "http://example.com" is not localhost/127.0.0.1...` (the `Traffic bot failed to start:` prefix comes from `main().catch()` in `index.js`, which is what actually prints the error) — process exits without sending any traffic.
 
 - [ ] **Step 6: Stop it cleanly**
 
