@@ -1,37 +1,36 @@
-# Digital Library - Full Stack Learning Project
+# Digital Library
 
-## Delivery workflow
+A full-stack digital publishing and library platform — readers browse and buy books,
+vendors publish and sell their own catalog, and admins moderate the whole thing.
+Started as a learning project; grew into a real multi-role platform.
 
-Changes are submitted as pull requests to `main`. GitHub Actions validates the
-backend and frontend; one approval is required before merging. Each approved
-merge automatically publishes the Docker images and deploys them to EC2.
+## What it does
 
-Beginner-friendly full-stack app using:
+- **Readers**: browse/search the catalog, subscribe to plans, buy books, leave reviews,
+  favorite titles, track reading history, get recommendations.
+- **Vendors**: apply for a vendor account, publish books (single files or ZIP bundles via S3),
+  track commissions on sales.
+- **Admins**: approve vendor applications, review audit logs, moderate the catalog.
+- **Platform**: JWT auth with refresh-token rotation, role-based access (reader/vendor/admin),
+  Redis-backed caching and rate limiting, AOP-based audit logging, payment webhooks
+  (mock/Stripe/Razorpay), AWS S3/SES/SNS integration (mockable for local dev).
 
-- Backend: Java Spring Boot
-- Database: PostgreSQL local
-- Frontend: React.js
+## Tech stack
 
-This version is still local-only. No Docker files, no AWS deployment files, and no cloud database yet.
+| | |
+|---|---|
+| Backend | Java 17, Spring Boot, Spring Security, Spring Data JPA, Flyway |
+| Frontend | React 18, MUI |
+| Data | PostgreSQL, Redis |
+| Infra | Docker, GitHub Actions CI/CD |
+| Cloud | AWS (S3, SES, SNS) — mocked locally, real in deployed environments |
 
-## Current Features
-
-- Add a book
-- View books with pagination
-- Search books by title or author
-- Sort books by title, author, category, or available copies
-- Edit a book
-- Delete a book
-- Consistent backend API response format
-- Validation and beginner-friendly error handling
-- Health endpoint for future load balancer checks
-
-## Project Structure
+## Project structure
 
 ```text
 backend/
   src/main/java/com/digitallibrary/
-    config/        CORS and web config
+    config/        CORS, security, and web config
     controller/    REST API endpoints
     dto/           Request/response objects
     entity/        JPA database models
@@ -39,98 +38,58 @@ backend/
     repository/    Spring Data JPA interfaces
     service/       Business logic interfaces
     service/impl/  Business logic implementations
+    security/      JWT, auth filters
+    ratelimit/     Bucket4j rate limiting
+    audit/         AOP audit logging
+  src/test/java/com/digitallibrary/  integration test suite (H2, MockMvc)
 
 frontend/
   src/
     components/    React UI components
     services/      API call functions
+
+tools/
+  traffic-bot/     local-only dev tool for exercising the app under realistic traffic
 ```
 
-## PostgreSQL Setup
+## Run locally
 
-Create the database once:
-
-```sql
-CREATE DATABASE digital_library;
-```
-
-Current backend database config lives in:
-
-```text
-backend/src/main/resources/application.properties
-```
-
-Current local values:
-
-```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/digital_library
-spring.datasource.username=postgres
-spring.datasource.password=<your-local-password>
-
-
-## Run Locally
-
-Backend:
+Postgres and Redis run in Docker; the backend and frontend run natively for hot reload.
+From the repo root:
 
 ```powershell
-cd "C:\Users\NAVEEN ROYAL\Digital Library\backend"
-mvn spring-boot:run
+docker compose up -d postgres redis
 ```
 
-Backend URL:
-
-```text
-http://localhost:8000
-```
-
-Frontend:
+Backend (from `backend/`):
 
 ```powershell
-cd "C:\Users\NAVEEN ROYAL\Digital Library\frontend"
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+Backend URL: `http://localhost:8000` — check `http://localhost:8000/api/health`.
+
+Frontend (from `frontend/`):
+
+```powershell
 npm install
 npm start
 ```
 
-Frontend URL:
+Frontend URL: `http://localhost:3000`.
 
-```text
-http://localhost:3000
-```
+On first run, `DataInitializer` auto-seeds demo accounts and sample books into an empty
+database — safe to run repeatedly, it skips anything that already exists:
 
-## API Endpoints
+| Role | Email | Password |
+|---|---|---|
+| Admin | admin@library.com | admin123 |
+| Reader | user@library.com | user123 |
+| Vendor | vendor@library.com | vendor123 |
 
-```text
-GET    /api/health
-POST   /api/books
-GET    /api/books?page=0&size=6&sortBy=title&sortDirection=asc
-GET    /api/books/{id}
-GET    /api/books/search?keyword=java&page=0&size=6
-PUT    /api/books/{id}
-DELETE /api/books/{id}
-```
+(Local-only seed data — not real credentials for any live environment.)
 
-Example POST body:
+## Delivery workflow
 
-```json
-{
-  "title": "Java Basics",
-  "author": "Beginner Author",
-  "category": "Programming",
-  "isbn": "ISBN-LOCAL-001",
-  "availableCopies": 3
-}
-```
-
-## Future Learning Roadmap
-
-- Security: add Spring Security, login, JWT, roles such as ADMIN and USER
-- Pagination: connect page size selector and server-side table filters
-- Redis: cache common searches or all-books pages
-- Rate limiting: protect APIs using Bucket4j or a reverse proxy rule
-- Reverse proxy: put Nginx in front of React and Spring Boot
-- Load balancing: run multiple backend instances behind a load balancer
-- Docker: containerize backend after local setup is understood
-- AWS ECR: push backend Docker image to AWS ECR
-- AWS RDS: move PostgreSQL from local PC to managed RDS
-- S3 and CloudFront: host React build as static frontend
-- ECS or EKS: deploy backend container in AWS
+Changes go through pull requests to `main`; GitHub Actions runs the backend and frontend
+test/build pipeline before merge.
