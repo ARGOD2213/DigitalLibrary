@@ -42,8 +42,18 @@ local-storage/
 deployment-info.*
 NEW_LAPTOP_AI_BOOTSTRAP_PROMPT.md
 
+# Internal/local-only docs — contain live infra details (IPs, RDS host,
+# instance IDs, SSH key filenames) and internal task-tracking notes that
+# don't belong on the public repo. Kept locally for personal reference.
+HANDOVER_DOCUMENTATION.md
+OPERATIONS_GUIDE.md
+TASK_PROGRESS.md
+
 # IDE
 .vscode/
 
 # Local machine-specific compose overrides (e.g. port remaps to avoid conflicts with other projects)
 docker-compose.override.yml
+
+# Git worktrees used for isolated feature work
+.worktrees/
