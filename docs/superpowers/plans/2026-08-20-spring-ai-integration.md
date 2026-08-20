@@ -62,7 +62,7 @@ to:
 
 Run (from `backend/`): `mvn clean test`
 
-Expected: `BUILD SUCCESS`, and all existing tests pass — at minimum `AuthSecurityIntegrationTest`, `BookCatalogIntegrationTest`, `EngagementIntegrationTest`, `PaymentWebhookSecurityIntegrationTest` (11 tests total per this suite's last known state). If anything fails here, it's the version bump surfacing a breaking change (e.g. in Spring Security's auto-configuration defaults) — stop and fix that before proceeding to Task 2, so a later failure can't be confused with something Spring AI caused.
+Expected: `BUILD SUCCESS`, and all existing tests pass — at minimum `AuthSecurityIntegrationTest`, `BookCatalogIntegrationTest`, `EngagementIntegrationTest`, `PaymentWebhookSecurityIntegrationTest` (16 tests total per this suite's last known state). If anything fails here, it's the version bump surfacing a breaking change (e.g. in Spring Security's auto-configuration defaults) — stop and fix that before proceeding to Task 2, so a later failure can't be confused with something Spring AI caused.
 
 - [ ] **Step 3: Start the app locally and confirm it still runs**
 
@@ -385,7 +385,7 @@ import com.digitallibrary.service.AiService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 
 import static org.mockito.ArgumentMatchers.anyString;
@@ -398,7 +398,7 @@ public class AiControllerTest extends BaseIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private AiService aiService;
 
     @Test
@@ -445,7 +445,7 @@ public class AiControllerTest extends BaseIntegrationTest {
 }
 ```
 
-`@MockBean` replaces the real `AiService` bean in the test's Spring context, so no real network call to Google ever happens in this suite — matching the plan's requirement that CI runs without needing a real API key.
+`@MockitoBean` (non-deprecated replacement for `@MockBean`) replaces the real `AiService` bean in the test's Spring context, so no real network call to Google ever happens in this suite — matching the plan's requirement that CI runs without needing a real API key.
 
 - [ ] **Step 2: Run the new tests**
 
@@ -453,11 +453,11 @@ Run (from `backend/`): `mvn test -Dtest=AiControllerTest`
 
 **Expected: `Tests run: 3, Failures: 0, Errors: 0`.**
 
-**If instead the whole Spring context fails to load** (an error mentioning `GoogleGenAiChatAutoConfiguration` or similar, not a test assertion failure): this means the auto-configured `ChatModel`/`ChatClient` bean itself fails to construct without a real API key, even though `AiService` — the bean built *from* it — is mocked away. `@MockBean` only replaces `AiService`; it doesn't stop Spring from still trying to construct the `ChatClient` bean `AiServiceImpl` would have depended on, because auto-configured beans are built during context refresh regardless of what ends up using them.
+**If instead the whole Spring context fails to load** (an error mentioning `GoogleGenAiChatAutoConfiguration` or similar, not a test assertion failure): this means the auto-configured `ChatModel`/`ChatClient` bean itself fails to construct without a real API key, even though `AiService` — the bean built *from* it — is mocked away. `@MockitoBean` only replaces `AiService`; it doesn't stop Spring from still trying to construct the `ChatClient` bean `AiServiceImpl` would have depended on, because auto-configured beans are built during context refresh regardless of what ends up using them.
 
   Fix: add to `backend/src/test/resources/application.properties`, following the same reasoning already used there to exclude Redis's auto-configuration for tests:
   ```properties
-  # No real Google GenAI calls in tests — AiService is @MockBean'd in AiControllerTest,
+  # No real Google GenAI calls in tests — AiService is @MockitoBean'd in AiControllerTest,
   # but the underlying ChatClient bean would otherwise still try to construct without
   # a real API key and fail context startup.
   spring.ai.model.chat=none
@@ -467,7 +467,7 @@ Run (from `backend/`): `mvn test -Dtest=AiControllerTest`
 - [ ] **Step 3: Run the full test suite to confirm nothing else broke**
 
 Run (from `backend/`): `mvn test`
-Expected: `BUILD SUCCESS`, all tests passing (the pre-existing 11 plus this task's 3 new ones — 14 total, or the count from whatever Task 1 found as the baseline).
+Expected: `BUILD SUCCESS`, all tests passing (the pre-existing 16 plus this task's 3 new ones — 19 total, or the count from whatever Task 1 found as the baseline).
 
 - [ ] **Step 4: Commit**
 
